@@ -1,5 +1,5 @@
 // ============================================================
-// 3. 每日台帐（含詳細明細 - 五頁籤 + 時段查詢 + 權限控制 + 小費出款）
+// 3. 每日台帐（含詳細明細 - 五頁籤 + 時段查詢 + 權限控制 + 小費出款 + 介紹人退水提款）
 // ============================================================
 
 // ============================================================
@@ -78,7 +78,8 @@ function renderTransactions(el) {
         total_insurance_earnings: filtered.reduce((sum, s) => sum + (s.insurance_earnings || 0), 0),
         total_insurance_fee: filtered.reduce((sum, s) => sum + (s.insurance_fee || 0), 0),
         total_tips: filtered.reduce((sum, s) => sum + (s.total_tips || 0), 0),
-        total_tips_withdrawn: filtered.reduce((sum, s) => sum + (s.tips_withdrawn_amount || 0), 0)
+        total_tips_withdrawn: filtered.reduce((sum, s) => sum + (s.tips_withdrawn_amount || 0), 0),
+        total_rebate_withdrawn: filtered.reduce((sum, s) => sum + (s.rebate_paid_amount || 0), 0)
     };
     
     // 獲取所有桌號選項
@@ -155,6 +156,9 @@ function renderTransactions(el) {
             <div class="stat-card" style="background:#fff8e1;border-color:#ffcc80;"><div class="stat-label">總小費</div><div class="stat-value" style="color:#ffa726;">${summary.total_tips.toFixed(2)}</div></div>
             <div class="stat-card" style="background:#e8f5e9;border-color:#a5d6a7;"><div class="stat-label">小費出款</div><div class="stat-value" style="color:#4CAF50;">${summary.total_tips_withdrawn.toFixed(2)}</div></div>
         </div>
+        <div class="stats-grid" style="grid-template-columns:repeat(4,1fr);margin-top:5px;">
+            <div class="stat-card" style="background:#e8f5e9;border-color:#a5d6a7;"><div class="stat-label">退水提款</div><div class="stat-value" style="color:#4CAF50;">${summary.total_rebate_withdrawn.toFixed(2)}</div></div>
+        </div>
         
         ${filtered.length === 0 ? `
             <div style="text-align:center;padding:40px;background:#fff;border-radius:10px;border:1px solid #eee;margin-top:15px;color:#999;">
@@ -180,6 +184,7 @@ function renderTransactions(el) {
                         <th>保险扣费</th>
                         <th>小费总额</th>
                         <th>小费出款</th>
+                        <th>退水提款</th>
                         <th>操作</th>
                     </tr></thead>
                     <tbody>
@@ -200,6 +205,7 @@ function renderTransactions(el) {
                                 <td style="color:#c62828;font-weight:bold;">${(s.insurance_fee || 0).toFixed(2)}</td>
                                 <td style="color:#ffa726;font-weight:bold;">${(s.total_tips || 0).toFixed(2)}</td>
                                 <td style="color:#4CAF50;font-weight:bold;">${(s.tips_withdrawn_amount || 0).toFixed(2)}</td>
+                                <td style="color:#4CAF50;font-weight:bold;">${(s.rebate_paid_amount || 0).toFixed(2)}</td>
                                 <td>
                                     ${canViewDetail ? `<button class="btn btn-info btn-sm" onclick="showSettlementDetail(${s.id})">📋 明細</button>` : '<span style="color:#999;font-size:11px;">無權限</span>'}
                                 </td>
@@ -297,11 +303,12 @@ function showSettlementDetail(settlementId) {
             <div><strong>总抽水：</strong>${(settlement.total_water || 0).toFixed(2)}</div>
             <div><strong>总保险：</strong>${(settlement.total_insurance || 0).toFixed(2)}</div>
         </div>
-        <div style="margin-bottom:15px;padding:6px 10px;background:#f8f9fc;border-radius:6px;font-size:12px;text-align:center;display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:5px;">
+        <div style="margin-bottom:15px;padding:6px 10px;background:#f8f9fc;border-radius:6px;font-size:12px;text-align:center;display:grid;grid-template-columns:1fr 1fr 1fr 1fr 1fr;gap:5px;">
             <div><strong>保险收益：</strong><span style="color:#1b5e20;">${(settlement.insurance_earnings || 0).toFixed(2)}</span></div>
             <div><strong>保险扣费：</strong><span style="color:#c62828;">${(settlement.insurance_fee || 0).toFixed(2)}</span></div>
             <div><strong>总小费：</strong><span style="color:#ffa726;">${(settlement.total_tips || 0).toFixed(2)}</span></div>
             <div><strong>小费出款：</strong><span style="color:#4CAF50;">${(settlement.tips_withdrawn_amount || 0).toFixed(2)}</span></div>
+            <div><strong>退水提款：</strong><span style="color:#4CAF50;">${(settlement.rebate_paid_amount || 0).toFixed(2)}</span></div>
         </div>
         
         <!-- 頁籤 -->
@@ -417,7 +424,7 @@ function renderPlayerTab(playerDetails, settlement) {
 
 
 // ============================================================
-// Tab 2: 介紹人明細（含提款功能）
+// Tab 2: 介紹人明細（含提款功能 - 從往來帳戶出金）
 // ============================================================
 
 function renderAgentTab(playerDetails, rebateDetails, settlement, settlementId, canRebatePayment) {
@@ -457,15 +464,16 @@ function renderAgentTab(playerDetails, rebateDetails, settlement, settlementId, 
     
     // 檢查退水是否已全部提款
     const allRebatePaid = settlement.rebate_paid || false;
+    const rebatePaidAmount = settlement.rebate_paid_amount || 0;
     
     let html = `
         <div style="padding:10px;background:#f8f9fc;border-radius:6px;margin-bottom:10px;display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:8px;text-align:center;font-size:13px;">
             <div><strong>介绍人数：</strong>${agentNames.filter(n => n !== '無介紹人').length}</div>
             <div><strong>总退水：</strong><span style="color:#e65100;">${(settlement.total_rebate || 0).toFixed(2)}</span></div>
-            <div><strong>总时长：</strong>${formatDuration(settlement.total_duration || 0)}</div>
+            <div><strong>已提款：</strong><span style="color:#4CAF50;">${rebatePaidAmount.toFixed(2)}</span></div>
             <div>
                 ${allRebatePaid ? 
-                    '<span style="color:#4CAF50;">✅ 已提款</span>' : 
+                    '<span style="color:#4CAF50;">✅ 全部已提款</span>' : 
                     (canRebatePayment ? `<button class="btn btn-success btn-sm" onclick="showAgentWithdrawDialog('${settlementId}')">💵 介紹人提款</button>` : 
                     '<span style="color:#999;font-size:11px;">無提款權限</span>')}
             </div>
@@ -1173,6 +1181,452 @@ function updateTipsWithdrawPreview() {
 
 
 // ============================================================
+// 介紹人提款對話框 - 從往來帳戶出金
+// ============================================================
+
+function showAgentWithdrawDialog(settlementId) {
+    if (!checkActionPermission('tables', 'rebate_payment')) {
+        showPermissionDenied('介紹人提款');
+        return;
+    }
+    
+    const settlements = DB.get('daily_settlements', []);
+    const settlement = settlements.find(s => s.id === parseInt(settlementId));
+    if (!settlement) {
+        alert('找不到結算記錄');
+        return;
+    }
+    
+    let rebateDetails = [];
+    try {
+        rebateDetails = JSON.parse(settlement.rebate_details || '[]');
+    } catch(e) {}
+    
+    if (rebateDetails.length === 0) {
+        alert('沒有退水記錄可提款');
+        return;
+    }
+    
+    if (settlement.rebate_paid) {
+        alert('✅ 所有介紹人退水已提款');
+        return;
+    }
+    
+    // 按介紹人分組
+    const agentMap = {};
+    rebateDetails.forEach(r => {
+        const key = r.agentId || r.agentName || '未知';
+        if (!agentMap[key]) {
+            agentMap[key] = {
+                agentName: r.agentName || '未知',
+                agentId: r.agentId || null,
+                totalRebate: 0,
+                players: []
+            };
+        }
+        agentMap[key].totalRebate += r.rebateAmount;
+        agentMap[key].players.push(r);
+    });
+    
+    let agentHtml = '';
+    let totalAllRebate = 0;
+    Object.keys(agentMap).forEach(key => {
+        const data = agentMap[key];
+        totalAllRebate += data.totalRebate;
+        // ★ 四捨五入到百位顯示
+        const displayAmount = Math.round(data.totalRebate / 100) * 100;
+        agentHtml += `
+            <div style="display:flex;justify-content:space-between;padding:6px 12px;border-bottom:1px solid #f0f0f0;font-size:13px;align-items:center;">
+                <span>👤 <strong>${data.agentName}</strong> (${data.players.length}位玩家)</span>
+                <span style="color:#4CAF50;font-weight:bold;">${displayAmount.toFixed(2)} 泰銖</span>
+                <button class="btn btn-success btn-sm" onclick="closeModal(this.closest('.modal-overlay'));showAgentWithdraw('${settlementId}', '${data.agentName}', ${data.agentId || 'null'}, ${displayAmount})">💵 提款</button>
+            </div>
+        `;
+    });
+    
+    // ★ 總退水也四捨五入到百位
+    const totalDisplay = Math.round(totalAllRebate / 100) * 100;
+    
+    // ★ 檢查是否所有退水都已提款
+    const allPaid = settlement.rebate_paid || false;
+    
+    const html = `
+        <div class="modal-title" style="font-size:20px;">💵 介紹人退水提款</div>
+        
+        <div style="margin-bottom:15px;padding:12px;background:linear-gradient(135deg, #4CAF50, #2E7D32);border-radius:8px;text-align:center;color:#fff;">
+            <div style="font-size:13px;opacity:0.9;">💰 總退水金額</div>
+            <div style="font-size:28px;font-weight:bold;">${totalDisplay.toFixed(2)} 泰銖</div>
+            <div style="font-size:12px;opacity:0.8;">共 ${Object.keys(agentMap).length} 位介紹人 | 已四舍五入到百位</div>
+            ${allPaid ? '<div style="font-size:12px;color:#ffd54f;margin-top:4px;">✅ 全部已提款</div>' : ''}
+        </div>
+        
+        <h4 style="margin-bottom:10px;text-align:center;font-size:15px;">👥 介紹人退水明細</h4>
+        <div style="margin-bottom:15px;padding:10px;background:#f8f9fc;border-radius:6px;border:1px solid #eee;max-height:300px;overflow-y:auto;">
+            ${agentHtml}
+        </div>
+        
+        ${!allPaid ? `
+            <div style="padding:10px;background:#e3f2fd;border-radius:6px;font-size:12px;text-align:center;border:1px solid #90caf9;">
+                💡 點擊各介紹人旁的「提款」按鈕進行個別提款
+                <br>💡 提款將從往來帳戶出金，請確認帳戶餘額充足
+            </div>
+        ` : ''}
+        
+        <div class="modal-actions">
+            <button class="btn" onclick="this.closest('.modal-overlay').remove()">關閉</button>
+        </div>
+    `;
+    showModal(html);
+}
+
+
+// ============================================================
+// 介紹人提款 - 從往來帳戶出金
+// ============================================================
+
+function showAgentWithdraw(settlementId, agentName, agentId, totalRebate) {
+    if (!checkActionPermission('tables', 'rebate_payment')) {
+        showPermissionDenied('介紹人提款');
+        return;
+    }
+    
+    if (!agentId) {
+        alert('找不到介紹人ID，無法進行提款');
+        return;
+    }
+    
+    if (totalRebate <= 0) {
+        alert(`${agentName} 沒有退水金額可提款`);
+        return;
+    }
+    
+    const accounts = DB.get('accounts', []);
+    const currencies = DB.get('currencies', []);
+    
+    // ★ 建構帳戶選項（包含幣種）
+    let accountOptions = '';
+    accounts.forEach(a => {
+        const balances = a.balances || {};
+        const currencyKeys = Object.keys(balances);
+        if (currencyKeys.length === 0) {
+            accountOptions += `<option value="${a.id}|THB" data-balance="0" data-currency="THB">${a.name} (THB: 0.00)</option>`;
+        } else {
+            currencyKeys.forEach(curr => {
+                const balance = balances[curr] || 0;
+                accountOptions += `<option value="${a.id}|${curr}" data-balance="${balance}" data-currency="${curr}">${a.name} (${curr}: ${balance.toFixed(2)})</option>`;
+            });
+        }
+    });
+    
+    // ★ 幣種選項
+    const currencyOptions = currencies.map(c => 
+        `<option value="${c.currency}" ${c.currency === 'THB' ? 'selected' : ''}>${c.currency} (${c.name || c.currency})</option>`
+    ).join('');
+    
+    // ★ 確保顯示的金額是四捨五入到百位
+    const displayAmount = Math.round(totalRebate / 100) * 100;
+    
+    // ★ 計算賣出價參考
+    const defaultCurrency = 'THB';
+    const sellRate = getSellRate(defaultCurrency);
+    
+    const html = `
+        <div class="modal-title" style="font-size:20px;">💵 介紹人提款 - ${agentName}</div>
+        
+        <div style="margin-bottom:15px;padding:12px;background:linear-gradient(135deg, #4CAF50, #2E7D32);border-radius:8px;text-align:center;color:#fff;">
+            <div style="font-size:13px;opacity:0.9;">💰 可提款金額</div>
+            <div style="font-size:28px;font-weight:bold;">${displayAmount.toFixed(2)} 泰銖</div>
+            <div style="font-size:12px;opacity:0.8;">（已四舍五入到百位）</div>
+        </div>
+        
+        <div class="form-group">
+            <label>提款方式 *</label>
+            <select id="agentWithdrawMethod" onchange="toggleAgentWithdrawMethod()" style="width:100%;padding:8px 12px;border:1px solid #ddd;border-radius:6px;font-size:14px;">
+                <option value="account">🏦 從往來帳戶出款</option>
+                <option value="cash">💵 提取現金（不入帳戶）</option>
+            </select>
+        </div>
+        
+        <div id="agentWithdrawAccountGroup">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:15px;margin-bottom:15px;">
+                <div class="form-group" style="margin-bottom:0;">
+                    <label>出款帳戶 *</label>
+                    <select id="agentWithdrawAccount" onchange="updateAgentWithdrawPreview()" style="width:100%;padding:8px 12px;border:1px solid #ddd;border-radius:6px;font-size:14px;">
+                        ${accountOptions}
+                        ${accounts.length === 0 ? '<option value="">⚠️ 請先到往來帳款新增帳戶</option>' : ''}
+                    </select>
+                </div>
+                <div class="form-group" style="margin-bottom:0;">
+                    <label>出款幣種 *</label>
+                    <select id="agentWithdrawCurrency" onchange="updateAgentWithdrawPreview()" style="width:100%;padding:8px 12px;border:1px solid #ddd;border-radius:6px;font-size:14px;">
+                        ${currencyOptions}
+                    </select>
+                </div>
+            </div>
+            <div id="agentWithdrawPreview" style="margin-bottom:15px;padding:10px;background:#e3f2fd;border-radius:6px;border:1px solid #90caf9;text-align:center;font-size:13px;display:none;">
+                <span style="color:#1565C0;">💡 出款後帳戶餘額：<strong id="agentAfterBalance">0.00</strong> <span id="agentAfterCurrency">THB</span></span>
+                <span style="color:#1565C0;margin-left:15px;">泰銖參考：<strong id="agentTHBRef">0.00</strong></span>
+                <span style="color:#1565C0;margin-left:15px;">賣出價：<strong id="agentSellRate">${sellRate}</strong></span>
+            </div>
+        </div>
+        
+        <div id="agentWithdrawCashInfo" style="display:none;margin-bottom:15px;padding:10px;background:#fff8e1;border-radius:6px;border:1px solid #ffcc80;text-align:center;font-size:13px;">
+            <span style="color:#e65100;">💵 現金提款 - 請確認已支付現金給介紹人 ${agentName}</span>
+        </div>
+        
+        <div class="form-group">
+            <label>備註</label>
+            <input type="text" id="agentWithdrawNote" placeholder="請輸入備註（可選）" style="width:100%;padding:8px 12px;border:1px solid #ddd;border-radius:6px;font-size:14px;">
+        </div>
+        
+        <div class="modal-actions">
+            <button class="btn" onclick="this.closest('.modal-overlay').remove()">取消</button>
+            <button class="btn btn-success" onclick="submitAgentWithdraw('${settlementId}', ${agentId}, '${agentName}', ${displayAmount})">✅ 確認提款</button>
+        </div>
+    `;
+    showModal(html);
+    
+    // ★ 切換提款方式
+    window.toggleAgentWithdrawMethod = function() {
+        const overlay = document.querySelector('.modal-overlay');
+        if (!overlay) return;
+        const method = overlay.querySelector('#agentWithdrawMethod').value;
+        const accountGroup = overlay.querySelector('#agentWithdrawAccountGroup');
+        const cashInfo = overlay.querySelector('#agentWithdrawCashInfo');
+        
+        if (method === 'account') {
+            accountGroup.style.display = 'block';
+            cashInfo.style.display = 'none';
+        } else {
+            accountGroup.style.display = 'none';
+            cashInfo.style.display = 'block';
+        }
+        // 更新預覽
+        if (window.updateAgentWithdrawPreview) window.updateAgentWithdrawPreview();
+    };
+    
+    // ★ 更新預覽
+    window.updateAgentWithdrawPreview = function() {
+        const overlay = document.querySelector('.modal-overlay');
+        if (!overlay) return;
+        const accountSelect = overlay.querySelector('#agentWithdrawAccount');
+        const currencySelect = overlay.querySelector('#agentWithdrawCurrency');
+        const selectedOption = accountSelect.options[accountSelect.selectedIndex];
+        const previewDiv = document.getElementById('agentWithdrawPreview');
+        const afterBalanceSpan = document.getElementById('agentAfterBalance');
+        const afterCurrencySpan = document.getElementById('agentAfterCurrency');
+        const thbRefSpan = document.getElementById('agentTHBRef');
+        const sellRateSpan = document.getElementById('agentSellRate');
+        
+        const selectedCurrency = currencySelect.value;
+        const currentBalance = parseFloat(selectedOption?.dataset?.balance || 0);
+        const amount = displayAmount;
+        
+        // 計算賣出價
+        const sellRate = getSellRate(selectedCurrency);
+        let deductAmount = 0;
+        if (selectedCurrency === 'THB') {
+            deductAmount = amount;
+        } else {
+            deductAmount = convertFromTHB(amount, selectedCurrency);
+        }
+        const afterBalance = currentBalance - deductAmount;
+        
+        if (selectedOption && selectedOption.value) {
+            previewDiv.style.display = 'block';
+            afterBalanceSpan.textContent = afterBalance.toFixed(2);
+            afterBalanceSpan.style.color = afterBalance >= 0 ? '#2e7d32' : '#c62828';
+            afterCurrencySpan.textContent = selectedCurrency;
+            thbRefSpan.textContent = amount.toFixed(2);
+            sellRateSpan.textContent = sellRate;
+            
+            if (currentBalance < deductAmount) {
+                previewDiv.style.background = '#ffebee';
+                previewDiv.style.borderColor = '#ef9a9a';
+                previewDiv.innerHTML = `
+                    <span style="color:#c62828;">⚠️ 帳戶 ${selectedCurrency} 餘額不足！</span>
+                    <span style="color:#c62828;">當前餘額：${currentBalance.toFixed(2)} ${selectedCurrency}</span>
+                    <span style="color:#c62828;">需要：${deductAmount.toFixed(2)} ${selectedCurrency}</span>
+                    <span style="color:#c62828;font-weight:bold;">（餘額將變為負值）</span>
+                `;
+            } else {
+                previewDiv.style.background = '#e3f2fd';
+                previewDiv.style.borderColor = '#90caf9';
+                previewDiv.innerHTML = `
+                    <span style="color:#1565C0;">💡 出款後帳戶餘額：<strong id="agentAfterBalance" style="color:${afterBalance >= 0 ? '#2e7d32' : '#c62828'};">${afterBalance.toFixed(2)}</strong> <span id="agentAfterCurrency">${selectedCurrency}</span></span>
+                    <span style="color:#1565C0;margin-left:15px;">泰銖參考：<strong id="agentTHBRef">${amount.toFixed(2)}</strong></span>
+                    <span style="color:#1565C0;margin-left:15px;">賣出價：<strong id="agentSellRate">${sellRate}</strong></span>
+                `;
+            }
+        } else {
+            previewDiv.style.display = 'none';
+        }
+    };
+    
+    // 綁定事件
+    document.getElementById('agentWithdrawAccount')?.addEventListener('change', updateAgentWithdrawPreview);
+    document.getElementById('agentWithdrawCurrency')?.addEventListener('change', updateAgentWithdrawPreview);
+    
+    setTimeout(() => {
+        if (window.toggleAgentWithdrawMethod) window.toggleAgentWithdrawMethod();
+        if (window.updateAgentWithdrawPreview) window.updateAgentWithdrawPreview();
+    }, 100);
+}
+
+
+// ============================================================
+// 提交介紹人提款 - 從往來帳戶出金
+// ============================================================
+
+function submitAgentWithdraw(settlementId, agentId, agentName, amount) {
+    const overlay = document.querySelector('.modal-overlay');
+    const method = overlay.querySelector('#agentWithdrawMethod').value;
+    const note = overlay.querySelector('#agentWithdrawNote').value.trim() || '';
+    
+    const adminName = getCurrentAdminName();
+    const adminId = getCurrentAdminId();
+    const nowTime = now();
+    
+    const settlements = DB.get('daily_settlements', []);
+    const settlement = settlements.find(s => s.id === parseInt(settlementId));
+    if (!settlement) {
+        alert('找不到結算記錄');
+        return;
+    }
+    
+    if (settlement.rebate_paid) {
+        alert('⚠️ 此介紹人的退水已提款');
+        overlay.remove();
+        return;
+    }
+    
+    let accountId = null;
+    let currency = 'THB';
+    let deductAmount = amount;
+    let accountName = '';
+    
+    // ★ 帳戶出款模式
+    if (method === 'account') {
+        const accountStr = overlay.querySelector('#agentWithdrawAccount').value;
+        if (!accountStr) {
+            alert('請選擇出款帳戶');
+            return;
+        }
+        const [accId, cur] = accountStr.split('|');
+        accountId = parseInt(accId);
+        currency = overlay.querySelector('#agentWithdrawCurrency').value;
+        
+        if (!accountId) {
+            alert('請選擇有效的帳戶');
+            return;
+        }
+        if (!currency) {
+            alert('請選擇出款幣種');
+            return;
+        }
+        
+        const account = getAccount(accountId);
+        accountName = account ? account.name : '未知帳戶';
+        
+        // ★ 計算需要扣除的金額（使用賣出價換算）
+        const sellRate = getSellRate(currency);
+        if (currency === 'THB') {
+            deductAmount = amount;
+        } else {
+            deductAmount = convertFromTHB(amount, currency);
+            if (deductAmount < 1) {
+                alert(`⚠️ 換算後金額不足 1 ${currency}！\n泰銖：${amount} / 賣出價 ${sellRate} = ${(amount/sellRate).toFixed(4)} ${currency}\n請選擇其他幣種或增加提款金額。`);
+                return;
+            }
+        }
+        
+        // ★ 檢查帳戶餘額
+        const currentBalance = get_account_balance(accountId, currency);
+        if (currentBalance < deductAmount) {
+            if (!confirm(`⚠️ 帳戶 ${currency} 餘額不足！\n當前餘額：${currentBalance.toFixed(2)} ${currency}\n需要：${deductAmount.toFixed(2)} ${currency}\n是否仍要繼續？（餘額將變為負值）`)) {
+                return;
+            }
+        }
+        
+        // ★ 從往來帳戶扣款
+        update_account_balance(accountId, currency, -deductAmount);
+        
+        // ★ 記錄帳戶交易
+        add_account_transaction(
+            accountId,
+            currency,
+            deductAmount,
+            'out',
+            'agent_rebate_withdraw',
+            settlement.id,
+            `介紹人退水提款 - ${agentName} - ${amount} 泰銖 (${deductAmount} ${currency}) - 賣出價 ${sellRate} - ${note} - 操作人：${adminName}`
+        );
+    }
+    
+    // ★ 記錄交易流水
+    const transactions = DB.get('transactions', []);
+    transactions.push({
+        id: DB.getNextId('transactions'),
+        member_id: null,
+        type: 'refund',
+        amount: amount,
+        note: `介紹人退水提款 - ${agentName} - ${amount} 泰銖 - 方式：${method === 'account' ? '帳戶出款 (' + accountName + ' - ' + currency + ')' : '現金'} - ${note} - 操作人：${adminName}`,
+        admin_id: adminId,
+        admin_name: adminName,
+        created_at: nowTime
+    });
+    DB.set('transactions', transactions);
+    
+    // ★ 更新結算記錄
+    settlement.rebate_paid = true;
+    settlement.rebate_paid_at = nowTime;
+    settlement.rebate_paid_method = method === 'account' ? `帳戶出款 (${accountName} - ${currency})` : '現金';
+    settlement.rebate_paid_amount = amount;
+    settlement.rebate_paid_admin = adminName;
+    settlement.rebate_account_id = accountId;
+    settlement.rebate_currency = currency;
+    settlement.rebate_deduct_amount = deductAmount;
+    
+    const idx = settlements.findIndex(s => s.id === settlement.id);
+    if (idx !== -1) {
+        settlements[idx] = settlement;
+        DB.set('daily_settlements', settlements);
+    }
+    
+    // ★ 記錄操作日誌
+    addOperationLog('每日台帳', '介紹人提款', agentName, 
+        `${agentName} 退水提款 ${amount} 泰銖 - 方式：${method === 'account' ? '帳戶出款 (' + accountName + ' - ' + currency + ')' : '現金'}${note ? ' - ' + note : ''} - 操作人：${adminName}`, agentId);
+    
+    overlay.remove();
+    
+    // ★ 顯示結果
+    let resultMsg = `✅ 介紹人退水提款完成！\n\n`;
+    resultMsg += `介紹人：${agentName}\n`;
+    resultMsg += `金額：${amount.toFixed(2)} 泰銖\n`;
+    resultMsg += `方式：${method === 'account' ? '🏦 帳戶出款' : '💵 現金'}\n`;
+    if (method === 'account') {
+        resultMsg += `出款帳戶：${accountName}\n`;
+        resultMsg += `出款幣種：${currency}\n`;
+        resultMsg += `扣款金額：${deductAmount.toFixed(2)} ${currency}\n`;
+        const newBalance = get_account_balance(accountId, currency);
+        resultMsg += `帳戶餘額：${newBalance.toFixed(2)} ${currency}\n`;
+        resultMsg += `賣出價：${getSellRate(currency)}\n`;
+    }
+    resultMsg += `操作人：${adminName}\n`;
+    if (note) resultMsg += `備註：${note}\n`;
+    
+    // 刷新頁面
+    const currentTab = document.querySelector('.tab-btn.active')?.dataset?.tab || 'tab2';
+    showSettlementDetail(settlement.id);
+    setTimeout(() => {
+        switchSettlementTab(currentTab);
+    }, 100);
+    
+    alert(resultMsg);
+}
+
+
+// ============================================================
 // 頁籤切換函數
 // ============================================================
 
@@ -1357,341 +1811,6 @@ function showPlayerDetail(playerName, settlementId) {
 function getMemberByName(name) {
     const members = DB.get('members', []);
     return members.find(m => m.name === name);
-}
-
-
-// ============================================================
-// 介紹人提款相關函數
-// ============================================================
-
-function showAgentWithdrawDialog(settlementId) {
-    if (!checkActionPermission('tables', 'rebate_payment')) {
-        showPermissionDenied('介紹人提款');
-        return;
-    }
-    
-    const settlements = DB.get('daily_settlements', []);
-    const settlement = settlements.find(s => s.id === parseInt(settlementId));
-    if (!settlement) {
-        alert('找不到結算記錄');
-        return;
-    }
-    
-    let rebateDetails = [];
-    try {
-        rebateDetails = JSON.parse(settlement.rebate_details || '[]');
-    } catch(e) {}
-    
-    if (rebateDetails.length === 0) {
-        alert('沒有退水記錄可提款');
-        return;
-    }
-    
-    if (settlement.rebate_paid) {
-        alert('✅ 所有介紹人退水已提款');
-        return;
-    }
-    
-    // 按介紹人分組
-    const agentMap = {};
-    rebateDetails.forEach(r => {
-        const key = r.agentId || r.agentName || '未知';
-        if (!agentMap[key]) {
-            agentMap[key] = {
-                agentName: r.agentName || '未知',
-                agentId: r.agentId || null,
-                totalRebate: 0,
-                players: []
-            };
-        }
-        agentMap[key].totalRebate += r.rebateAmount;
-        agentMap[key].players.push(r);
-    });
-    
-    let agentHtml = '';
-    let totalAllRebate = 0;
-    Object.keys(agentMap).forEach(key => {
-        const data = agentMap[key];
-        totalAllRebate += data.totalRebate;
-        // ★ 四捨五入到百位顯示
-        const displayAmount = Math.round(data.totalRebate / 100) * 100;
-        agentHtml += `
-            <div style="display:flex;justify-content:space-between;padding:6px 12px;border-bottom:1px solid #f0f0f0;font-size:13px;align-items:center;">
-                <span>👤 <strong>${data.agentName}</strong> (${data.players.length}位玩家)</span>
-                <span style="color:#4CAF50;font-weight:bold;">${displayAmount.toFixed(2)} 泰銖</span>
-                <button class="btn btn-success btn-sm" onclick="closeModal(this.closest('.modal-overlay'));showAgentWithdraw('${settlementId}', '${data.agentName}', ${data.agentId || 'null'}, ${displayAmount})">💵 提款</button>
-            </div>
-        `;
-    });
-    
-    // ★ 總退水也四捨五入到百位
-    const totalDisplay = Math.round(totalAllRebate / 100) * 100;
-    
-    const html = `
-        <div class="modal-title" style="font-size:20px;">💵 介紹人退水提款</div>
-        
-        <div style="margin-bottom:15px;padding:12px;background:linear-gradient(135deg, #4CAF50, #2E7D32);border-radius:8px;text-align:center;color:#fff;">
-            <div style="font-size:13px;opacity:0.9;">💰 總退水金額</div>
-            <div style="font-size:28px;font-weight:bold;">${totalDisplay.toFixed(2)} 泰銖</div>
-            <div style="font-size:12px;opacity:0.8;">共 ${Object.keys(agentMap).length} 位介紹人 | 已四舍五入到百位</div>
-        </div>
-        
-        <h4 style="margin-bottom:10px;text-align:center;font-size:15px;">👥 介紹人退水明細</h4>
-        <div style="margin-bottom:15px;padding:10px;background:#f8f9fc;border-radius:6px;border:1px solid #eee;max-height:300px;overflow-y:auto;">
-            ${agentHtml}
-        </div>
-        
-        <div style="padding:10px;background:#e3f2fd;border-radius:6px;font-size:12px;text-align:center;border:1px solid #90caf9;">
-            💡 點擊各介紹人旁的「提款」按鈕進行個別提款
-        </div>
-        
-        <div class="modal-actions">
-            <button class="btn" onclick="this.closest('.modal-overlay').remove()">關閉</button>
-        </div>
-    `;
-    showModal(html);
-}
-
-function showAgentWithdraw(settlementId, agentName, agentId, totalRebate) {
-    if (!checkActionPermission('tables', 'rebate_payment')) {
-        showPermissionDenied('介紹人提款');
-        return;
-    }
-    
-    if (!agentId) {
-        alert('找不到介紹人ID，無法進行提款');
-        return;
-    }
-    
-    if (totalRebate <= 0) {
-        alert(`${agentName} 沒有退水金額可提款`);
-        return;
-    }
-    
-    const accounts = DB.get('accounts', []);
-    const currencies = DB.get('currencies', []);
-    
-    let accountOptions = '';
-    accounts.forEach(a => {
-        const balances = a.balances || {};
-        const currencyKeys = Object.keys(balances);
-        if (currencyKeys.length === 0) {
-            accountOptions += `<option value="${a.id}|THB" data-balance="0" data-currency="THB">${a.name} (THB: 0.00)</option>`;
-        } else {
-            currencyKeys.forEach(curr => {
-                const balance = balances[curr] || 0;
-                accountOptions += `<option value="${a.id}|${curr}" data-balance="${balance}" data-currency="${curr}">${a.name} (${curr}: ${balance.toFixed(2)})</option>`;
-            });
-        }
-    });
-    
-    const currencyOptions = currencies.map(c => 
-        `<option value="${c.currency}" ${c.currency === 'THB' ? 'selected' : ''}>${c.currency} (${c.name || c.currency})</option>`
-    ).join('');
-    
-    // ★ 確保顯示的金額是四捨五入到百位
-    const displayAmount = Math.round(totalRebate / 100) * 100;
-    
-    const html = `
-        <div class="modal-title" style="font-size:20px;">💵 介紹人提款 - ${agentName}</div>
-        
-        <div style="margin-bottom:15px;padding:12px;background:linear-gradient(135deg, #4CAF50, #2E7D32);border-radius:8px;text-align:center;color:#fff;">
-            <div style="font-size:13px;opacity:0.9;">💰 可提款金額</div>
-            <div style="font-size:28px;font-weight:bold;">${displayAmount.toFixed(2)} 泰銖</div>
-            <div style="font-size:12px;opacity:0.8;">（已四舍五入到百位）</div>
-        </div>
-        
-        <div class="form-group">
-            <label>提款方式 *</label>
-            <select id="agentWithdrawMethod" onchange="toggleAgentWithdrawMethod()" style="width:100%;padding:8px 12px;border:1px solid #ddd;border-radius:6px;font-size:14px;">
-                <option value="account">🏦 存入介紹人帳戶</option>
-                <option value="cash">💵 提取現金（不入帳戶）</option>
-            </select>
-        </div>
-        
-        <div id="agentWithdrawAccountGroup">
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:15px;margin-bottom:15px;">
-                <div class="form-group" style="margin-bottom:0;">
-                    <label>存入帳戶 *</label>
-                    <select id="agentWithdrawAccount" onchange="updateAgentWithdrawPreview()" style="width:100%;padding:8px 12px;border:1px solid #ddd;border-radius:6px;font-size:14px;">
-                        ${accountOptions}
-                    </select>
-                </div>
-                <div class="form-group" style="margin-bottom:0;">
-                    <label>存入幣種 *</label>
-                    <select id="agentWithdrawCurrency" onchange="updateAgentWithdrawPreview()" style="width:100%;padding:8px 12px;border:1px solid #ddd;border-radius:6px;font-size:14px;">
-                        ${currencyOptions}
-                    </select>
-                </div>
-            </div>
-            <div id="agentWithdrawPreview" style="margin-bottom:15px;padding:10px;background:#fff8e1;border-radius:6px;border:1px solid #ffcc80;text-align:center;font-size:13px;display:none;">
-                <span style="color:#e65100;">💡 存入後帳戶餘額：<strong id="agentAfterBalance">0.00</strong> <span id="agentAfterCurrency">THB</span></span>
-            </div>
-        </div>
-        
-        <div id="agentWithdrawCashInfo" style="display:none;margin-bottom:15px;padding:10px;background:#fff8e1;border-radius:6px;border:1px solid #ffcc80;text-align:center;font-size:13px;">
-            <span style="color:#e65100;">💵 現金提款 - 請確認已支付現金給介紹人 ${agentName}</span>
-        </div>
-        
-        <div class="form-group">
-            <label>備註</label>
-            <input type="text" id="agentWithdrawNote" placeholder="請輸入備註（可選）" style="width:100%;padding:8px 12px;border:1px solid #ddd;border-radius:6px;font-size:14px;">
-        </div>
-        
-        <div class="modal-actions">
-            <button class="btn" onclick="this.closest('.modal-overlay').remove()">取消</button>
-            <button class="btn btn-success" onclick="submitAgentWithdraw('${settlementId}', ${agentId}, '${agentName}', ${displayAmount})">✅ 確認提款</button>
-        </div>
-    `;
-    showModal(html);
-    
-    window.toggleAgentWithdrawMethod = function() {
-        const overlay = document.querySelector('.modal-overlay');
-        if (!overlay) return;
-        const method = overlay.querySelector('#agentWithdrawMethod').value;
-        const accountGroup = overlay.querySelector('#agentWithdrawAccountGroup');
-        const cashInfo = overlay.querySelector('#agentWithdrawCashInfo');
-        
-        if (method === 'account') {
-            accountGroup.style.display = 'block';
-            cashInfo.style.display = 'none';
-        } else {
-            accountGroup.style.display = 'none';
-            cashInfo.style.display = 'block';
-        }
-    };
-    
-    window.updateAgentWithdrawPreview = function() {
-        const overlay = document.querySelector('.modal-overlay');
-        if (!overlay) return;
-        const accountSelect = overlay.querySelector('#agentWithdrawAccount');
-        const currencySelect = overlay.querySelector('#agentWithdrawCurrency');
-        const selectedOption = accountSelect.options[accountSelect.selectedIndex];
-        const previewDiv = document.getElementById('agentWithdrawPreview');
-        const afterBalanceSpan = document.getElementById('agentAfterBalance');
-        const afterCurrencySpan = document.getElementById('agentAfterCurrency');
-        
-        const selectedCurrency = currencySelect.value;
-        const currentBalance = parseFloat(selectedOption?.dataset?.balance || 0);
-        const amount = displayAmount;
-        
-        const sellRate = getSellRate(selectedCurrency);
-        let deductAmount = 0;
-        if (selectedCurrency === 'THB') {
-            deductAmount = amount;
-        } else {
-            deductAmount = convertFromTHB(amount, selectedCurrency);
-        }
-        const afterBalance = currentBalance + deductAmount;
-        
-        previewDiv.style.display = 'block';
-        afterBalanceSpan.textContent = afterBalance.toFixed(2);
-        afterBalanceSpan.style.color = afterBalance >= 0 ? '#2e7d32' : '#c62828';
-        afterCurrencySpan.textContent = selectedCurrency;
-    };
-    
-    document.getElementById('agentWithdrawAccount')?.addEventListener('change', updateAgentWithdrawPreview);
-    document.getElementById('agentWithdrawCurrency')?.addEventListener('change', updateAgentWithdrawPreview);
-    
-    setTimeout(() => {
-        if (window.toggleAgentWithdrawMethod) window.toggleAgentWithdrawMethod();
-        if (window.updateAgentWithdrawPreview) window.updateAgentWithdrawPreview();
-    }, 100);
-}
-
-function submitAgentWithdraw(settlementId, agentId, agentName, amount) {
-    const overlay = document.querySelector('.modal-overlay');
-    const method = overlay.querySelector('#agentWithdrawMethod').value;
-    const note = overlay.querySelector('#agentWithdrawNote').value.trim() || '';
-    
-    const adminName = getCurrentAdminName();
-    const adminId = getCurrentAdminId();
-    const nowTime = now();
-    
-    const settlements = DB.get('daily_settlements', []);
-    const settlement = settlements.find(s => s.id === parseInt(settlementId));
-    if (!settlement) {
-        alert('找不到結算記錄');
-        return;
-    }
-    
-    if (settlement.rebate_paid) {
-        alert('⚠️ 此介紹人的退水已提款');
-        overlay.remove();
-        return;
-    }
-    
-    let accountId = null;
-    let currency = 'THB';
-    let deductAmount = amount;
-    
-    if (method === 'account') {
-        const accountStr = overlay.querySelector('#agentWithdrawAccount').value;
-        if (!accountStr) {
-            alert('請選擇存入帳戶');
-            return;
-        }
-        const [accId, cur] = accountStr.split('|');
-        accountId = parseInt(accId);
-        currency = overlay.querySelector('#agentWithdrawCurrency').value;
-        
-        if (!accountId) {
-            alert('請選擇有效的帳戶');
-            return;
-        }
-        
-        update_account_balance(accountId, currency, deductAmount);
-        
-        add_account_transaction(
-            accountId,
-            currency,
-            deductAmount,
-            'in',
-            'agent_rebate_withdraw',
-            settlement.id,
-            `介紹人退水提款 - ${agentName} - ${amount} 泰銖 (${deductAmount} ${currency}) - ${note} - 操作人：${adminName}`
-        );
-    }
-    
-    const transactions = DB.get('transactions', []);
-    transactions.push({
-        id: DB.getNextId('transactions'),
-        member_id: null,
-        type: 'refund',
-        amount: amount,
-        note: `介紹人退水提款 - ${agentName} - ${amount} 泰銖 - 方式：${method === 'account' ? '帳戶存入' : '現金'} - ${note} - 操作人：${adminName}`,
-        admin_id: adminId,
-        admin_name: adminName,
-        created_at: nowTime
-    });
-    DB.set('transactions', transactions);
-    
-    settlement.rebate_paid = true;
-    settlement.rebate_paid_at = nowTime;
-    settlement.rebate_paid_method = method === 'account' ? `帳戶存入 (${currency})` : '現金';
-    settlement.rebate_paid_amount = amount;
-    settlement.rebate_paid_admin = adminName;
-    settlement.rebate_account_id = accountId;
-    settlement.rebate_currency = currency;
-    
-    const idx = settlements.findIndex(s => s.id === settlement.id);
-    if (idx !== -1) {
-        settlements[idx] = settlement;
-        DB.set('daily_settlements', settlements);
-    }
-    
-    addOperationLog('每日台帳', '介紹人提款', agentName, 
-        `${agentName} 退水提款 ${amount} 泰銖 - 方式：${method === 'account' ? '帳戶存入' : '現金'}${note ? ' - ' + note : ''}`, agentId);
-    
-    overlay.remove();
-    
-    const currentTab = document.querySelector('.tab-btn.active')?.dataset?.tab || 'tab2';
-    showSettlementDetail(settlement.id);
-    setTimeout(() => {
-        switchSettlementTab(currentTab);
-    }, 100);
-    
-    alert(`✅ 介紹人退水提款完成！\n\n介紹人：${agentName}\n金額：${amount.toFixed(2)} 泰銖\n方式：${method === 'account' ? '🏦 帳戶存入' : '💵 現金'}\n操作人：${adminName}`);
 }
 
 
