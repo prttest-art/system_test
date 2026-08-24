@@ -369,3 +369,46 @@ header {
 .table-container th:nth-child(9) { min-width: 120px; }
 .table-container th:nth-child(10) { min-width: 80px; }
 .table-container th:nth-child(11) { min-width: 200px; }
+
+/* ============================================================
+   移除 number input 的上下箭頭 (spinner)
+   ============================================================ */
+
+/* Chrome, Safari, Edge, Opera */
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+    -webkit-appearance: none !important;
+    margin: 0 !important;
+}
+
+/* Firefox */
+input[type="number"] {
+    -moz-appearance: textfield !important;
+    appearance: textfield !important;
+}
+
+/* 針對 IE / Edge 舊版 */
+input[type="number"]::-ms-clear,
+input[type="number"]::-ms-reveal {
+    display: none !important;
+}
+
+/* 確保所有瀏覽器一致 */
+input[type="number"] {
+    -webkit-appearance: none;
+    appearance: none;
+}
+
+/* 移除上下箭頭後，輸入框的 padding 保持正常 */
+input[type="number"] {
+    padding-right: 12px;
+}
+
+/* 可選：讓數字輸入框在獲得焦點時沒有額外樣式 */
+input[type="number"]:focus {
+    outline: none;
+    border-color: #2196F3;
+    box-shadow: 0 0 0 3px rgba(33, 150, 243, 0.15);
+}
+
+/* 可選：如果還想要上下箭頭的功能（但隱藏），以上 CSS 已實現 */
