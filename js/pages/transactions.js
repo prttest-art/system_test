@@ -1,5 +1,5 @@
 // ============================================================
-// 3. 每日台帐（含詳細明細 - 五頁籤 + 時段查詢 + 權限控制）
+// 3. 每日台帐（含詳細明細 - 五頁籤 + 時段查詢 + 權限控制 + 小費出款）
 // ============================================================
 
 // ============================================================
@@ -77,7 +77,8 @@ function renderTransactions(el) {
         total_insurance: filtered.reduce((sum, s) => sum + (s.total_insurance || 0), 0),
         total_insurance_earnings: filtered.reduce((sum, s) => sum + (s.insurance_earnings || 0), 0),
         total_insurance_fee: filtered.reduce((sum, s) => sum + (s.insurance_fee || 0), 0),
-        total_tips: filtered.reduce((sum, s) => sum + (s.total_tips || 0), 0)
+        total_tips: filtered.reduce((sum, s) => sum + (s.total_tips || 0), 0),
+        total_tips_withdrawn: filtered.reduce((sum, s) => sum + (s.tips_withdrawn_amount || 0), 0)
     };
     
     // 獲取所有桌號選項
@@ -152,6 +153,7 @@ function renderTransactions(el) {
         </div>
         <div class="stats-grid" style="grid-template-columns:repeat(4,1fr);margin-top:5px;">
             <div class="stat-card" style="background:#fff8e1;border-color:#ffcc80;"><div class="stat-label">總小費</div><div class="stat-value" style="color:#ffa726;">${summary.total_tips.toFixed(2)}</div></div>
+            <div class="stat-card" style="background:#e8f5e9;border-color:#a5d6a7;"><div class="stat-label">小費出款</div><div class="stat-value" style="color:#4CAF50;">${summary.total_tips_withdrawn.toFixed(2)}</div></div>
         </div>
         
         ${filtered.length === 0 ? `
@@ -177,6 +179,7 @@ function renderTransactions(el) {
                         <th>保险收益</th>
                         <th>保险扣费</th>
                         <th>小费总额</th>
+                        <th>小费出款</th>
                         <th>操作</th>
                     </tr></thead>
                     <tbody>
@@ -196,6 +199,7 @@ function renderTransactions(el) {
                                 <td style="color:#1b5e20;">${(s.insurance_earnings || 0).toFixed(2)}</td>
                                 <td style="color:#c62828;font-weight:bold;">${(s.insurance_fee || 0).toFixed(2)}</td>
                                 <td style="color:#ffa726;font-weight:bold;">${(s.total_tips || 0).toFixed(2)}</td>
+                                <td style="color:#4CAF50;font-weight:bold;">${(s.tips_withdrawn_amount || 0).toFixed(2)}</td>
                                 <td>
                                     ${canViewDetail ? `<button class="btn btn-info btn-sm" onclick="showSettlementDetail(${s.id})">📋 明細</button>` : '<span style="color:#999;font-size:11px;">無權限</span>'}
                                 </td>
@@ -219,7 +223,6 @@ function renderTransactions(el) {
 
 // ============================================================
 // 顯示結算明細（五頁籤）- 含權限檢查
-// 修正：確保抽水、保險、小費明細正確從結算記錄讀取
 // ============================================================
 
 function showSettlementDetail(settlementId) {
@@ -247,7 +250,6 @@ function showSettlementDetail(settlementId) {
         rebateDetails = JSON.parse(settlement.rebate_details || '[]');
         tipsDetails = JSON.parse(settlement.tips_details || '[]');
         waterDetails = JSON.parse(settlement.water_details || '[]');
-        // ★ 從 settlement 讀取保險記錄
         insuranceDetails = JSON.parse(settlement.insurance_details || '[]');
     } catch(e) {
         console.warn('解析結算明細失敗:', e);
@@ -299,7 +301,7 @@ function showSettlementDetail(settlementId) {
             <div><strong>保险收益：</strong><span style="color:#1b5e20;">${(settlement.insurance_earnings || 0).toFixed(2)}</span></div>
             <div><strong>保险扣费：</strong><span style="color:#c62828;">${(settlement.insurance_fee || 0).toFixed(2)}</span></div>
             <div><strong>总小费：</strong><span style="color:#ffa726;">${(settlement.total_tips || 0).toFixed(2)}</span></div>
-            <div><strong>抽水扣费：</strong><span style="color:#c62828;">${(settlement.water_fee || settlement.fee || 0).toFixed(2)}</span></div>
+            <div><strong>小费出款：</strong><span style="color:#4CAF50;">${(settlement.tips_withdrawn_amount || 0).toFixed(2)}</span></div>
         </div>
         
         <!-- 頁籤 -->
@@ -579,7 +581,7 @@ function renderWaterTab(waterRecords, settlement) {
 
 
 // ============================================================
-// Tab 4: 保險紀錄（修正版 - 從 settlement 讀取）
+// Tab 4: 保險紀錄
 // ============================================================
 
 function renderInsuranceTab(insuranceRecords, settlement) {
@@ -645,7 +647,7 @@ function renderInsuranceTab(insuranceRecords, settlement) {
 
 
 // ============================================================
-// Tab 5: 小費紀錄
+// Tab 5: 小費紀錄（含小費出款功能）
 // ============================================================
 
 function renderTipsTab(tipsRecords, settlement, settlementId, canTipsWithdraw) {
@@ -655,6 +657,20 @@ function renderTipsTab(tipsRecords, settlement, settlementId, canTipsWithdraw) {
     
     const totalTips = settlement.total_tips || 0;
     const employees = DB.get('employees', []);
+    
+    // 計算已出款金額
+    let totalWithdrawn = 0;
+    let totalPending = 0;
+    tipsRecords.forEach(t => {
+        if (t.withdrawn) {
+            totalWithdrawn += (t.withdrawn_amount || t.amount || 0);
+        } else {
+            totalPending += (t.amount || 0);
+        }
+    });
+    
+    // 檢查是否全部已提款
+    const allWithdrawn = tipsRecords.every(t => t.withdrawn === true);
     
     // 按員工分組統計
     const employeeMap = {};
@@ -667,6 +683,7 @@ function renderTipsTab(tipsRecords, settlement, settlementId, canTipsWithdraw) {
                 total: 0,
                 count: 0,
                 withdrawn: t.withdrawn || false,
+                withdrawn_amount: t.withdrawn_amount || 0,
                 records: []
             };
         }
@@ -675,23 +692,22 @@ function renderTipsTab(tipsRecords, settlement, settlementId, canTipsWithdraw) {
         employeeMap[empId].records.push(t);
         if (t.withdrawn) {
             employeeMap[empId].withdrawn = true;
+            employeeMap[empId].withdrawn_amount += (t.withdrawn_amount || t.amount || 0);
         }
     });
-    
-    // 檢查是否全部已提款
-    const allWithdrawn = tipsRecords.every(t => t.withdrawn === true);
     
     // 員工統計HTML
     let employeeStatsHtml = '';
     Object.keys(employeeMap).forEach(key => {
         const data = employeeMap[key];
-        const status = data.withdrawn ? '✅ 已提款' : '⏳ 待提款';
+        const status = data.withdrawn ? '✅ 已出款' : '⏳ 待出款';
         const statusColor = data.withdrawn ? '#4CAF50' : '#ffa726';
+        const withdrawnDisplay = data.withdrawn ? data.withdrawn_amount.toFixed(2) : '0.00';
         employeeStatsHtml += `
             <div style="display:flex;justify-content:space-between;padding:6px 12px;border-bottom:1px solid #f0f0f0;font-size:13px;">
                 <span><strong>${data.employee_name}</strong> (${data.count}筆)</span>
                 <span style="color:#ffa726;font-weight:bold;">${data.total.toFixed(2)} 泰銖</span>
-                <span style="color:${statusColor};font-size:12px;">${status}</span>
+                <span style="color:${statusColor};font-size:12px;">${status} (已出款 ${withdrawnDisplay} 泰銖)</span>
             </div>
         `;
     });
@@ -701,9 +717,10 @@ function renderTipsTab(tipsRecords, settlement, settlementId, canTipsWithdraw) {
     tipsRecords.forEach((t, index) => {
         const emp = employees.find(e => e.id === t.employee_id);
         const empName = emp ? emp.name : (t.employee_name || '未知');
-        const status = t.withdrawn ? '✅ 已提款' : '⏳ 待提款';
+        const status = t.withdrawn ? '✅ 已出款' : '⏳ 待出款';
         const statusColor = t.withdrawn ? '#4CAF50' : '#ffa726';
         const withdrawnAmount = t.withdrawn_amount ? t.withdrawn_amount.toFixed(2) : '-';
+        const withdrawDate = t.withdrawn_at ? formatDate(t.withdrawn_at) : '-';
         
         detailRows += `
             <tr>
@@ -713,23 +730,59 @@ function renderTipsTab(tipsRecords, settlement, settlementId, canTipsWithdraw) {
                 <td style="padding:4px 10px;border-bottom:1px solid #f0f0f0;text-align:center;font-size:12px;color:#666;">${formatDate(t.created_at)}</td>
                 <td style="padding:4px 10px;border-bottom:1px solid #f0f0f0;text-align:center;font-size:12px;color:${statusColor};">${status}</td>
                 <td style="padding:4px 10px;border-bottom:1px solid #f0f0f0;text-align:center;font-size:12px;color:#666;">${withdrawnAmount}</td>
+                <td style="padding:4px 10px;border-bottom:1px solid #f0f0f0;text-align:center;font-size:12px;color:#666;">${withdrawDate}</td>
                 <td style="padding:4px 10px;border-bottom:1px solid #f0f0f0;text-align:center;font-size:12px;color:#666;">${t.note || '-'}</td>
                 <td style="padding:4px 10px;border-bottom:1px solid #f0f0f0;text-align:center;font-size:12px;color:#666;">${t.admin_name || '系统'}</td>
             </tr>
         `;
     });
     
+    // ★ 小費出款功能
+    let withdrawHtml = '';
+    if (!allWithdrawn && canTipsWithdraw) {
+        withdrawHtml = `
+            <div style="margin-top:15px;padding:15px;background:#fff8e1;border-radius:8px;border:2px solid #ffcc80;">
+                <h4 style="margin:0 0 10px 0;color:#e65100;font-size:15px;">💵 小費出款</h4>
+                <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;align-items:end;">
+                    <div class="form-group" style="margin-bottom:0;">
+                        <label style="font-size:13px;color:#555;">出款金額 *</label>
+                        <input type="text" id="tipsWithdrawAmount" inputmode="decimal" pattern="[0-9]*\.?[0-9]*" placeholder="請輸入出款金額" value="${totalPending.toFixed(2)}" style="width:100%;padding:8px 12px;border:1px solid #ddd;border-radius:6px;font-size:14px;">
+                        <div style="font-size:11px;color:#999;margin-top:3px;">可出款金額：${totalPending.toFixed(2)} 泰銖</div>
+                    </div>
+                    <div class="form-group" style="margin-bottom:0;">
+                        <label style="font-size:13px;color:#555;">備註</label>
+                        <input type="text" id="tipsWithdrawNote" placeholder="請輸入備註（可選）" style="width:100%;padding:8px 12px;border:1px solid #ddd;border-radius:6px;font-size:14px;">
+                    </div>
+                    <div>
+                        <button class="btn btn-success" onclick="submitTipsWithdraw('${settlementId}')" style="padding:10px 20px;font-size:14px;">✅ 確認出款</button>
+                    </div>
+                </div>
+                <div style="margin-top:8px;font-size:12px;color:#999;">
+                    💡 出款金額不能超過可出款金額（${totalPending.toFixed(2)} 泰銖）
+                </div>
+            </div>
+        `;
+    } else if (allWithdrawn) {
+        withdrawHtml = `
+            <div style="margin-top:15px;padding:12px;background:#e8f5e9;border-radius:6px;text-align:center;border:1px solid #a5d6a7;">
+                <span style="color:#2e7d32;">✅ 所有小費已出款完成</span>
+                <span style="color:#666;margin-left:10px;">總出款金額：${totalWithdrawn.toFixed(2)} 泰銖</span>
+            </div>
+        `;
+    } else if (!canTipsWithdraw) {
+        withdrawHtml = `
+            <div style="margin-top:15px;padding:12px;background:#f8f9fc;border-radius:6px;text-align:center;border:1px solid #eee;">
+                <span style="color:#999;">⛔ 您沒有小費出款的權限</span>
+            </div>
+        `;
+    }
+    
     let html = `
         <div style="padding:10px;background:#f8f9fc;border-radius:6px;margin-bottom:10px;display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:8px;text-align:center;font-size:13px;">
-            <div><strong>小费笔数：</strong>${tipsRecords.length}</div>
-            <div><strong>总小费：</strong><span style="color:#ffa726;">${totalTips.toFixed(2)}</span></div>
-            <div><strong>已提款：</strong><span style="color:#4CAF50;">${tipsRecords.filter(t => t.withdrawn).length} 筆</span></div>
-            <div>
-                ${allWithdrawn ? 
-                    '<span style="color:#4CAF50;">✅ 全部已提款</span>' : 
-                    (canTipsWithdraw ? `<button class="btn btn-success btn-sm" onclick="showTipsCashWithdraw('${settlementId}')">💵 現金提款</button>` : 
-                    '<span style="color:#999;font-size:11px;">無提款權限</span>')}
-            </div>
+            <div><strong>小費筆數：</strong>${tipsRecords.length}</div>
+            <div><strong>總小費：</strong><span style="color:#ffa726;">${totalTips.toFixed(2)}</span></div>
+            <div><strong>已出款：</strong><span style="color:#4CAF50;">${totalWithdrawn.toFixed(2)}</span></div>
+            <div><strong>待出款：</strong><span style="color:#ffa726;">${totalPending.toFixed(2)}</span></div>
         </div>
         
         <h4 style="margin-bottom:10px;text-align:center;font-size:15px;">👥 員工小費統計</h4>
@@ -742,7 +795,9 @@ function renderTipsTab(tipsRecords, settlement, settlementId, canTipsWithdraw) {
             </div>
         </div>
         
-        <h4 style="margin-bottom:10px;text-align:center;font-size:15px;">📋 詳細記錄</h4>
+        ${withdrawHtml}
+        
+        <h4 style="margin-top:15px;margin-bottom:10px;text-align:center;font-size:15px;">📋 詳細記錄</h4>
         <div style="max-height:300px;overflow-y:auto;border:1px solid #e0e0e0;border-radius:6px;">
             <table style="width:100%;border-collapse:collapse;font-size:13px;">
                 <thead><tr style="background:#f5f5f5;position:sticky;top:0;z-index:1;">
@@ -750,8 +805,9 @@ function renderTipsTab(tipsRecords, settlement, settlementId, canTipsWithdraw) {
                     <th style="padding:6px 10px;border-bottom:2px solid #ddd;text-align:center;min-width:80px;">员工</th>
                     <th style="padding:6px 10px;border-bottom:2px solid #ddd;text-align:center;min-width:80px;">金额</th>
                     <th style="padding:6px 10px;border-bottom:2px solid #ddd;text-align:center;min-width:140px;">时间</th>
-                    <th style="padding:6px 10px;border-bottom:2px solid #ddd;text-align:center;min-width:80px;">提款状态</th>
-                    <th style="padding:6px 10px;border-bottom:2px solid #ddd;text-align:center;min-width:80px;">提款金额</th>
+                    <th style="padding:6px 10px;border-bottom:2px solid #ddd;text-align:center;min-width:80px;">出款状态</th>
+                    <th style="padding:6px 10px;border-bottom:2px solid #ddd;text-align:center;min-width:80px;">出款金额</th>
+                    <th style="padding:6px 10px;border-bottom:2px solid #ddd;text-align:center;min-width:140px;">出款时间</th>
                     <th style="padding:6px 10px;border-bottom:2px solid #ddd;text-align:center;min-width:100px;">备注</th>
                     <th style="padding:6px 10px;border-bottom:2px solid #ddd;text-align:center;min-width:80px;">操作人</th>
                 </tr></thead>
@@ -761,10 +817,189 @@ function renderTipsTab(tipsRecords, settlement, settlementId, canTipsWithdraw) {
             </table>
         </div>
         <div style="padding:8px;background:#fff8e1;border-radius:6px;margin-top:10px;text-align:center;font-size:12px;color:#e65100;border:1px solid #ffcc80;">
-            💡 小費提款為現金支付，不影響往來帳戶餘額
+            💡 小費出款為現金支付，不影響往來帳戶餘額
         </div>
     `;
     return html;
+}
+
+
+// ============================================================
+// 小費出款功能 - 可輸入出金金額
+// ============================================================
+
+function submitTipsWithdraw(settlementId) {
+    // ✅ 檢查小費出款權限
+    if (!checkActionPermission('tables', 'tips_withdraw')) {
+        showPermissionDenied('小費出款');
+        return;
+    }
+    
+    const overlay = document.querySelector('.modal-overlay');
+    if (!overlay) {
+        alert('系統錯誤，請重新操作');
+        return;
+    }
+    
+    const amountInput = overlay.querySelector('#tipsWithdrawAmount');
+    const noteInput = overlay.querySelector('#tipsWithdrawNote');
+    
+    if (!amountInput) {
+        alert('找不到金額輸入欄位，請重新打開頁面');
+        return;
+    }
+    
+    // ★ 解析金額
+    const withdrawAmount = parseFloat(amountInput.value.replace(/,/g, ''));
+    if (isNaN(withdrawAmount) || withdrawAmount <= 0) {
+        alert('請輸入有效的出款金額');
+        return;
+    }
+    
+    const note = noteInput ? noteInput.value.trim() : '';
+    
+    const settlements = DB.get('daily_settlements', []);
+    const settlement = settlements.find(s => s.id === parseInt(settlementId));
+    if (!settlement) {
+        alert('找不到結算記錄');
+        return;
+    }
+    
+    let tipsDetails = [];
+    try {
+        tipsDetails = JSON.parse(settlement.tips_details || '[]');
+    } catch(e) {}
+    
+    if (tipsDetails.length === 0) {
+        alert('沒有小費記錄可出款');
+        return;
+    }
+    
+    // 計算待出款金額
+    let totalPending = 0;
+    tipsDetails.forEach(t => {
+        if (!t.withdrawn) {
+            totalPending += (t.amount || 0);
+        }
+    });
+    
+    if (totalPending <= 0) {
+        alert('✅ 所有小費已出款完成');
+        return;
+    }
+    
+    if (withdrawAmount > totalPending) {
+        if (!confirm(`⚠️ 出款金額 (${withdrawAmount.toFixed(2)} 泰銖) 超過待出款金額 (${totalPending.toFixed(2)} 泰銖)\n是否仍要繼續？超出的部分將無法出款`)) {
+            return;
+        }
+    }
+    
+    const adminName = getCurrentAdminName();
+    const adminId = getCurrentAdminId();
+    const nowTime = now();
+    
+    // ★ 執行出款：按時間順序從舊到新抵扣
+    let remainingAmount = withdrawAmount;
+    let updatedCount = 0;
+    let actualWithdrawn = 0;
+    
+    // 排序：先出款舊的記錄（按時間順序）
+    tipsDetails.sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+    
+    tipsDetails.forEach(t => {
+        if (remainingAmount <= 0) return;
+        if (t.withdrawn) return;
+        
+        const deductAmount = Math.min(t.amount, remainingAmount);
+        t.withdrawn = true;
+        t.withdrawn_at = nowTime;
+        t.withdrawn_amount = deductAmount;
+        t.withdrawn_admin_name = adminName;
+        t.withdrawn_note = note || '';
+        
+        remainingAmount -= deductAmount;
+        actualWithdrawn += deductAmount;
+        updatedCount++;
+    });
+    
+    // 如果有剩餘金額但沒有更多待出款記錄
+    if (remainingAmount > 0 && updatedCount > 0) {
+        // 全部已出款完成
+    }
+    
+    // 更新 settlement
+    settlement.tips_details = JSON.stringify(tipsDetails);
+    settlement.tips_withdrawn = true;
+    settlement.tips_withdrawn_at = nowTime;
+    settlement.tips_withdrawn_admin = adminName;
+    settlement.tips_withdrawn_amount = (settlement.tips_withdrawn_amount || 0) + actualWithdrawn;
+    settlement.tips_withdrawn_note = note;
+    
+    const idx = settlements.findIndex(s => s.id === settlement.id);
+    if (idx !== -1) {
+        settlements[idx] = settlement;
+        DB.set('daily_settlements', settlements);
+    }
+    
+    // ★ 更新 tips_records 中的記錄
+    const allTipsRecords = DB.get('tips_records', []);
+    tipsDetails.forEach(t => {
+        const record = allTipsRecords.find(r => r.id === t.id);
+        if (record && !record.withdrawn) {
+            record.withdrawn = true;
+            record.withdrawn_at = t.withdrawn_at;
+            record.withdrawn_amount = t.withdrawn_amount;
+            record.withdrawn_admin_name = t.withdrawn_admin_name;
+            record.withdrawn_note = t.withdrawn_note || note;
+        }
+    });
+    DB.set('tips_records', allTipsRecords);
+    
+    // ★ 記錄交易流水（小費出款）
+    const transactions = DB.get('transactions', []);
+    transactions.push({
+        id: DB.getNextId('transactions'),
+        member_id: null,
+        type: 'refund',
+        amount: actualWithdrawn,
+        note: `小費出款 - ${settlement.table_type} - ${actualWithdrawn.toFixed(2)} 泰銖 - 共 ${updatedCount} 筆小費${note ? ' - ' + note : ''} - 操作人：${adminName}`,
+        admin_id: adminId,
+        admin_name: adminName,
+        created_at: nowTime
+    });
+    DB.set('transactions', transactions);
+    
+    // ★ 記錄操作日誌
+    addOperationLog('每日台帳', '小費出款', settlement.table_type, 
+        `${settlement.table_type} 小費出款 ${actualWithdrawn.toFixed(2)} 泰銖 (共 ${updatedCount} 筆)${note ? ' - ' + note : ''} - 操作人：${adminName}`);
+    
+    // ★ 顯示結果
+    const remainingUnpaid = totalPending - actualWithdrawn;
+    let resultMsg = `✅ 小費出款完成！\n\n`;
+    resultMsg += `桌號：${settlement.table_type}\n`;
+    resultMsg += `出款金額：${actualWithdrawn.toFixed(2)} 泰銖\n`;
+    resultMsg += `處理筆數：${updatedCount} 筆\n`;
+    resultMsg += `剩餘待出款：${remainingUnpaid.toFixed(2)} 泰銖\n`;
+    resultMsg += `操作人：${adminName}\n`;
+    if (note) resultMsg += `備註：${note}\n`;
+    
+    if (remainingAmount <= 0 && updatedCount > 0) {
+        resultMsg += `\n✅ 所有小費已出款完成！`;
+    } else if (remainingAmount > 0) {
+        resultMsg += `\n⚠️ 出款金額 ${withdrawAmount.toFixed(2)} 超過待出款金額 ${totalPending.toFixed(2)}，實際出款 ${actualWithdrawn.toFixed(2)} 泰銖`;
+    }
+    
+    // ★ 關閉彈窗並刷新
+    overlay.remove();
+    
+    // 刷新結算明細
+    const currentTab = document.querySelector('.tab-btn.active')?.dataset?.tab || 'tab5';
+    showSettlementDetail(settlement.id);
+    setTimeout(() => {
+        switchSettlementTab(currentTab);
+    }, 100);
+    
+    alert(resultMsg);
 }
 
 
@@ -1288,197 +1523,6 @@ function submitAgentWithdraw(settlementId, agentId, agentName, amount) {
     }, 100);
     
     alert(`✅ 介紹人退水提款完成！\n\n介紹人：${agentName}\n金額：${amount.toFixed(2)} 泰銖\n方式：${method === 'account' ? '🏦 帳戶存入' : '💵 現金'}\n操作人：${adminName}`);
-}
-
-
-// ============================================================
-// 小費現金提款
-// ============================================================
-
-function showTipsCashWithdraw(settlementId) {
-    if (!checkActionPermission('tables', 'tips_withdraw')) {
-        showPermissionDenied('小費現金提款');
-        return;
-    }
-    
-    const settlements = DB.get('daily_settlements', []);
-    const settlement = settlements.find(s => s.id === parseInt(settlementId));
-    if (!settlement) {
-        alert('找不到結算記錄');
-        return;
-    }
-    
-    let tipsDetails = [];
-    try {
-        tipsDetails = JSON.parse(settlement.tips_details || '[]');
-    } catch(e) {}
-    
-    if (tipsDetails.length === 0) {
-        alert('沒有小費記錄可提款');
-        return;
-    }
-    
-    const allWithdrawn = tipsDetails.every(t => t.withdrawn === true);
-    if (allWithdrawn) {
-        alert('✅ 所有小費已提款');
-        return;
-    }
-    
-    const totalTips = settlement.total_tips || 0;
-    const employees = DB.get('employees', []);
-    
-    let employeeHtml = '';
-    const employeeMap = {};
-    tipsDetails.forEach(t => {
-        const key = t.employee_id || 'unknown';
-        if (!employeeMap[key]) {
-            employeeMap[key] = {
-                employee_name: t.employee_name || '未知員工',
-                total: 0,
-                count: 0,
-                withdrawn: t.withdrawn || false
-            };
-        }
-        employeeMap[key].total += t.amount;
-        employeeMap[key].count++;
-        if (t.withdrawn) {
-            employeeMap[key].withdrawn = true;
-        }
-    });
-    
-    Object.keys(employeeMap).forEach(key => {
-        const data = employeeMap[key];
-        const status = data.withdrawn ? '✅ 已提款' : '⏳ 待提款';
-        const statusColor = data.withdrawn ? '#4CAF50' : '#ffa726';
-        employeeHtml += `
-            <div style="display:flex;justify-content:space-between;padding:4px 8px;border-bottom:1px solid #f0f0f0;font-size:13px;">
-                <span>👤 ${data.employee_name} (${data.count}筆)</span>
-                <span style="color:#ffa726;font-weight:bold;">${data.total.toFixed(2)} 泰銖</span>
-                <span style="color:${statusColor};font-size:12px;">${status}</span>
-            </div>
-        `;
-    });
-    
-    const html = `
-        <div class="modal-title" style="font-size:20px;">💵 小費現金提款</div>
-        
-        <div style="margin-bottom:15px;padding:12px;background:linear-gradient(135deg, #ffa726, #f57c00);border-radius:8px;text-align:center;color:#fff;">
-            <div style="font-size:13px;opacity:0.9;">💰 總小費金額</div>
-            <div style="font-size:28px;font-weight:bold;">${totalTips.toFixed(2)} 泰銖</div>
-            <div style="font-size:12px;opacity:0.8;">共 ${tipsDetails.length} 筆記錄</div>
-        </div>
-        
-        <h4 style="margin-bottom:10px;text-align:center;font-size:15px;">👥 員工小費明細</h4>
-        <div style="margin-bottom:15px;padding:10px;background:#f8f9fc;border-radius:6px;border:1px solid #eee;max-height:200px;overflow-y:auto;">
-            ${employeeHtml}
-        </div>
-        
-        <div style="padding:10px;background:#fff8e1;border-radius:6px;border:1px solid #ffcc80;text-align:center;font-size:13px;margin-bottom:15px;">
-            <span style="color:#e65100;">💵 現金提款 - 請確認已支付現金給員工</span>
-        </div>
-        
-        <div class="form-group">
-            <label>備註</label>
-            <input type="text" id="tipsCashNote" placeholder="請輸入備註（可選）" style="width:100%;padding:8px 12px;border:1px solid #ddd;border-radius:6px;font-size:14px;">
-        </div>
-        
-        <div class="modal-actions">
-            <button class="btn" onclick="this.closest('.modal-overlay').remove()">取消</button>
-            <button class="btn btn-success" onclick="submitTipsCashWithdraw('${settlementId}')">✅ 確認現金提款</button>
-        </div>
-    `;
-    showModal(html);
-}
-
-function submitTipsCashWithdraw(settlementId) {
-    const overlay = document.querySelector('.modal-overlay');
-    const note = overlay.querySelector('#tipsCashNote').value.trim() || '';
-    
-    const adminName = getCurrentAdminName();
-    const adminId = getCurrentAdminId();
-    const nowTime = now();
-    
-    const settlements = DB.get('daily_settlements', []);
-    const settlement = settlements.find(s => s.id === parseInt(settlementId));
-    if (!settlement) {
-        alert('找不到結算記錄');
-        return;
-    }
-    
-    let tipsDetails = [];
-    try {
-        tipsDetails = JSON.parse(settlement.tips_details || '[]');
-    } catch(e) {}
-    
-    if (tipsDetails.length === 0) {
-        alert('沒有小費記錄可提款');
-        return;
-    }
-    
-    const allWithdrawn = tipsDetails.every(t => t.withdrawn === true);
-    if (allWithdrawn) {
-        alert('✅ 所有小費已提款');
-        overlay.remove();
-        return;
-    }
-    
-    const totalTips = settlement.total_tips || 0;
-    
-    const allTipsRecords = DB.get('tips_records', []);
-    tipsDetails.forEach(t => {
-        const record = allTipsRecords.find(r => r.id === t.id);
-        if (record && !record.withdrawn) {
-            record.withdrawn = true;
-            record.withdrawn_at = nowTime;
-            record.withdrawn_amount = t.amount;
-            record.withdrawn_admin_name = adminName;
-        }
-    });
-    DB.set('tips_records', allTipsRecords);
-    
-    const updatedTipsDetails = tipsDetails.map(t => ({
-        ...t,
-        withdrawn: true,
-        withdrawn_at: nowTime,
-        withdrawn_amount: t.amount,
-        withdrawn_admin_name: adminName
-    }));
-    settlement.tips_details = JSON.stringify(updatedTipsDetails);
-    settlement.tips_withdrawn = true;
-    settlement.tips_withdrawn_at = nowTime;
-    settlement.tips_withdrawn_admin = adminName;
-    
-    const idx = settlements.findIndex(s => s.id === settlement.id);
-    if (idx !== -1) {
-        settlements[idx] = settlement;
-        DB.set('daily_settlements', settlements);
-    }
-    
-    const transactions = DB.get('transactions', []);
-    transactions.push({
-        id: DB.getNextId('transactions'),
-        member_id: null,
-        type: 'refund',
-        amount: totalTips,
-        note: `小費現金提款 - ${totalTips.toFixed(2)} 泰銖 - ${note} - 操作人：${adminName}`,
-        admin_id: adminId,
-        admin_name: adminName,
-        created_at: nowTime
-    });
-    DB.set('transactions', transactions);
-    
-    addOperationLog('每日台帳', '小費現金提款', settlement.table_type, 
-        `${settlement.table_type} 小費現金提款 ${totalTips.toFixed(2)} 泰銖${note ? ' - ' + note : ''}`);
-    
-    overlay.remove();
-    
-    const currentTab = document.querySelector('.tab-btn.active')?.dataset?.tab || 'tab5';
-    showSettlementDetail(settlement.id);
-    setTimeout(() => {
-        switchSettlementTab(currentTab);
-    }, 100);
-    
-    alert(`✅ 小費現金提款完成！\n\n桌號：${settlement.table_type}\n總金額：${totalTips.toFixed(2)} 泰銖\n操作人：${adminName}`);
 }
 
 
