@@ -647,7 +647,7 @@ function renderInsuranceTab(insuranceRecords, settlement) {
 
 
 // ============================================================
-// Tab 5: 小費紀錄（含小費出款功能）
+// Tab 5: 小費紀錄（含小費出款功能 - 透過往來帳戶）
 // ============================================================
 
 function renderTipsTab(tipsRecords, settlement, settlementId, canTipsWithdraw) {
@@ -657,6 +657,7 @@ function renderTipsTab(tipsRecords, settlement, settlementId, canTipsWithdraw) {
     
     const totalTips = settlement.total_tips || 0;
     const employees = DB.get('employees', []);
+    const accounts = DB.get('accounts', []);
     
     // 計算已出款金額
     let totalWithdrawn = 0;
@@ -721,6 +722,7 @@ function renderTipsTab(tipsRecords, settlement, settlementId, canTipsWithdraw) {
         const statusColor = t.withdrawn ? '#4CAF50' : '#ffa726';
         const withdrawnAmount = t.withdrawn_amount ? t.withdrawn_amount.toFixed(2) : '-';
         const withdrawDate = t.withdrawn_at ? formatDate(t.withdrawn_at) : '-';
+        const withdrawAccount = t.withdrawn_account_name || '-';
         
         detailRows += `
             <tr>
@@ -731,19 +733,41 @@ function renderTipsTab(tipsRecords, settlement, settlementId, canTipsWithdraw) {
                 <td style="padding:4px 10px;border-bottom:1px solid #f0f0f0;text-align:center;font-size:12px;color:${statusColor};">${status}</td>
                 <td style="padding:4px 10px;border-bottom:1px solid #f0f0f0;text-align:center;font-size:12px;color:#666;">${withdrawnAmount}</td>
                 <td style="padding:4px 10px;border-bottom:1px solid #f0f0f0;text-align:center;font-size:12px;color:#666;">${withdrawDate}</td>
+                <td style="padding:4px 10px;border-bottom:1px solid #f0f0f0;text-align:center;font-size:12px;color:#666;">${withdrawAccount}</td>
                 <td style="padding:4px 10px;border-bottom:1px solid #f0f0f0;text-align:center;font-size:12px;color:#666;">${t.note || '-'}</td>
                 <td style="padding:4px 10px;border-bottom:1px solid #f0f0f0;text-align:center;font-size:12px;color:#666;">${t.admin_name || '系统'}</td>
             </tr>
         `;
     });
     
-    // ★ 小費出款功能
+    // ★ 建構帳戶選項
+    let accountOptions = '';
+    accounts.forEach(a => {
+        const balances = a.balances || {};
+        const currencyKeys = Object.keys(balances);
+        if (currencyKeys.length === 0) {
+            accountOptions += `<option value="${a.id}|THB" data-balance="0" data-currency="THB">${a.name} (THB: 0.00)</option>`;
+        } else {
+            currencyKeys.forEach(curr => {
+                const balance = balances[curr] || 0;
+                accountOptions += `<option value="${a.id}|${curr}" data-balance="${balance}" data-currency="${curr}">${a.name} (${curr}: ${balance.toFixed(2)})</option>`;
+            });
+        }
+    });
+    
+    // ★ 幣種選項
+    const currencies = DB.get('currencies', []);
+    const currencyOptions = currencies.map(c => 
+        `<option value="${c.currency}" ${c.currency === 'THB' ? 'selected' : ''}>${c.currency} (${c.name || c.currency})</option>`
+    ).join('');
+    
+    // ★ 小費出款功能（透過往來帳戶）
     let withdrawHtml = '';
     if (!allWithdrawn && canTipsWithdraw) {
         withdrawHtml = `
             <div style="margin-top:15px;padding:15px;background:#fff8e1;border-radius:8px;border:2px solid #ffcc80;">
-                <h4 style="margin:0 0 10px 0;color:#e65100;font-size:15px;">💵 小費出款</h4>
-                <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;align-items:end;">
+                <h4 style="margin:0 0 10px 0;color:#e65100;font-size:15px;">💵 小費出款（往來帳戶）</h4>
+                <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;align-items:end;margin-bottom:10px;">
                     <div class="form-group" style="margin-bottom:0;">
                         <label style="font-size:13px;color:#555;">出款金額 *</label>
                         <input type="text" id="tipsWithdrawAmount" inputmode="decimal" pattern="[0-9]*\.?[0-9]*" placeholder="請輸入出款金額" value="${totalPending.toFixed(2)}" style="width:100%;padding:8px 12px;border:1px solid #ddd;border-radius:6px;font-size:14px;">
@@ -756,6 +780,25 @@ function renderTipsTab(tipsRecords, settlement, settlementId, canTipsWithdraw) {
                     <div>
                         <button class="btn btn-success" onclick="submitTipsWithdraw('${settlementId}')" style="padding:10px 20px;font-size:14px;">✅ 確認出款</button>
                     </div>
+                </div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+                    <div class="form-group" style="margin-bottom:0;">
+                        <label style="font-size:13px;color:#555;">出款帳戶 *</label>
+                        <select id="tipsWithdrawAccount" onchange="updateTipsWithdrawPreview()" style="width:100%;padding:8px 12px;border:1px solid #ddd;border-radius:6px;font-size:14px;">
+                            ${accountOptions}
+                            ${accounts.length === 0 ? '<option value="">⚠️ 請先到往來帳款新增帳戶</option>' : ''}
+                        </select>
+                    </div>
+                    <div class="form-group" style="margin-bottom:0;">
+                        <label style="font-size:13px;color:#555;">出款幣種 *</label>
+                        <select id="tipsWithdrawCurrency" onchange="updateTipsWithdrawPreview()" style="width:100%;padding:8px 12px;border:1px solid #ddd;border-radius:6px;font-size:14px;">
+                            ${currencyOptions}
+                        </select>
+                    </div>
+                </div>
+                <div id="tipsWithdrawPreview" style="margin-top:10px;padding:10px;background:#e3f2fd;border-radius:6px;border:1px solid #90caf9;text-align:center;font-size:13px;display:none;">
+                    <span style="color:#1565C0;">💡 出款後帳戶餘額：<strong id="tipsAfterBalance">0.00</strong> <span id="tipsAfterCurrency">THB</span></span>
+                    <span style="color:#1565C0;margin-left:15px;">出款金額：<strong id="tipsWithdrawDisplay">0.00</strong> <span id="tipsWithdrawDisplayCurrency">THB</span></span>
                 </div>
                 <div style="margin-top:8px;font-size:12px;color:#999;">
                     💡 出款金額不能超過可出款金額（${totalPending.toFixed(2)} 泰銖）
@@ -808,6 +851,7 @@ function renderTipsTab(tipsRecords, settlement, settlementId, canTipsWithdraw) {
                     <th style="padding:6px 10px;border-bottom:2px solid #ddd;text-align:center;min-width:80px;">出款状态</th>
                     <th style="padding:6px 10px;border-bottom:2px solid #ddd;text-align:center;min-width:80px;">出款金额</th>
                     <th style="padding:6px 10px;border-bottom:2px solid #ddd;text-align:center;min-width:140px;">出款时间</th>
+                    <th style="padding:6px 10px;border-bottom:2px solid #ddd;text-align:center;min-width:100px;">出款帳戶</th>
                     <th style="padding:6px 10px;border-bottom:2px solid #ddd;text-align:center;min-width:100px;">备注</th>
                     <th style="padding:6px 10px;border-bottom:2px solid #ddd;text-align:center;min-width:80px;">操作人</th>
                 </tr></thead>
@@ -817,7 +861,7 @@ function renderTipsTab(tipsRecords, settlement, settlementId, canTipsWithdraw) {
             </table>
         </div>
         <div style="padding:8px;background:#fff8e1;border-radius:6px;margin-top:10px;text-align:center;font-size:12px;color:#e65100;border:1px solid #ffcc80;">
-            💡 小費出款為現金支付，不影響往來帳戶餘額
+            💡 小費出款從往來帳戶扣款，請確保帳戶餘額充足
         </div>
     `;
     return html;
@@ -825,7 +869,7 @@ function renderTipsTab(tipsRecords, settlement, settlementId, canTipsWithdraw) {
 
 
 // ============================================================
-// 小費出款功能 - 可輸入出金金額
+// 小費出款功能 - 透過往來帳戶出款
 // ============================================================
 
 function submitTipsWithdraw(settlementId) {
@@ -843,9 +887,11 @@ function submitTipsWithdraw(settlementId) {
     
     const amountInput = overlay.querySelector('#tipsWithdrawAmount');
     const noteInput = overlay.querySelector('#tipsWithdrawNote');
+    const accountSelect = overlay.querySelector('#tipsWithdrawAccount');
+    const currencySelect = overlay.querySelector('#tipsWithdrawCurrency');
     
-    if (!amountInput) {
-        alert('找不到金額輸入欄位，請重新打開頁面');
+    if (!amountInput || !accountSelect || !currencySelect) {
+        alert('找不到必要欄位，請重新打開頁面');
         return;
     }
     
@@ -857,6 +903,25 @@ function submitTipsWithdraw(settlementId) {
     }
     
     const note = noteInput ? noteInput.value.trim() : '';
+    const accountStr = accountSelect.value;
+    const currency = currencySelect.value;
+    
+    if (!accountStr) {
+        alert('請選擇出款帳戶');
+        return;
+    }
+    
+    const [accountIdStr, accountCurrency] = accountStr.split('|');
+    const accountId = parseInt(accountIdStr);
+    if (!accountId) {
+        alert('請選擇有效的出款帳戶');
+        return;
+    }
+    
+    if (!currency) {
+        alert('請選擇出款幣種');
+        return;
+    }
     
     const settlements = DB.get('daily_settlements', []);
     const settlement = settlements.find(s => s.id === parseInt(settlementId));
@@ -894,6 +959,35 @@ function submitTipsWithdraw(settlementId) {
         }
     }
     
+    // ★ 檢查帳戶餘額（使用賣出價換算）
+    const account = getAccount(accountId);
+    if (!account) {
+        alert('帳戶不存在');
+        return;
+    }
+    
+    // 獲取當前帳戶餘額
+    const currentBalance = get_account_balance(accountId, currency);
+    
+    // 計算需要扣除的金額（使用賣出價換算）
+    const sellRate = getSellRate(currency);
+    let deductAmount = 0;
+    if (currency === 'THB') {
+        deductAmount = withdrawAmount;
+    } else {
+        deductAmount = convertFromTHB(withdrawAmount, currency);
+        if (deductAmount < 1) {
+            alert(`⚠️ 換算後金額不足 1 ${currency}！\n泰銖：${withdrawAmount} / 賣出價 ${sellRate} = ${(withdrawAmount/sellRate).toFixed(4)} ${currency}\n請選擇其他幣種或增加出款金額。`);
+            return;
+        }
+    }
+    
+    if (currentBalance < deductAmount) {
+        if (!confirm(`⚠️ 帳戶 ${currency} 餘額不足！\n當前餘額：${currentBalance.toFixed(2)} ${currency}\n需要：${deductAmount.toFixed(2)} ${currency}\n是否仍要繼續？（餘額將變為負值）`)) {
+            return;
+        }
+    }
+    
     const adminName = getCurrentAdminName();
     const adminId = getCurrentAdminId();
     const nowTime = now();
@@ -916,16 +1010,29 @@ function submitTipsWithdraw(settlementId) {
         t.withdrawn_amount = deductAmount;
         t.withdrawn_admin_name = adminName;
         t.withdrawn_note = note || '';
+        t.withdrawn_account_id = accountId;
+        t.withdrawn_account_name = account.name;
+        t.withdrawn_currency = currency;
+        t.withdrawn_deduct_amount = deductAmount;
         
         remainingAmount -= deductAmount;
         actualWithdrawn += deductAmount;
         updatedCount++;
     });
     
-    // 如果有剩餘金額但沒有更多待出款記錄
-    if (remainingAmount > 0 && updatedCount > 0) {
-        // 全部已出款完成
-    }
+    // ★ 從往來帳戶扣款
+    update_account_balance(accountId, currency, -deductAmount);
+    
+    // ★ 記錄帳戶交易
+    add_account_transaction(
+        accountId,
+        currency,
+        deductAmount,
+        'out',
+        'tips_withdraw',
+        settlement.id,
+        `小費出款 - ${settlement.table_type} - ${deductAmount} ${currency} (泰銖參考：${withdrawAmount.toFixed(2)}) - 賣出價 ${sellRate} - 共 ${updatedCount} 筆小費${note ? ' - ' + note : ''} - 操作人：${adminName}`
+    );
     
     // 更新 settlement
     settlement.tips_details = JSON.stringify(tipsDetails);
@@ -934,6 +1041,10 @@ function submitTipsWithdraw(settlementId) {
     settlement.tips_withdrawn_admin = adminName;
     settlement.tips_withdrawn_amount = (settlement.tips_withdrawn_amount || 0) + actualWithdrawn;
     settlement.tips_withdrawn_note = note;
+    settlement.tips_withdrawn_account_id = accountId;
+    settlement.tips_withdrawn_account_name = account.name;
+    settlement.tips_withdrawn_currency = currency;
+    settlement.tips_withdrawn_deduct_amount = deductAmount;
     
     const idx = settlements.findIndex(s => s.id === settlement.id);
     if (idx !== -1) {
@@ -951,6 +1062,10 @@ function submitTipsWithdraw(settlementId) {
             record.withdrawn_amount = t.withdrawn_amount;
             record.withdrawn_admin_name = t.withdrawn_admin_name;
             record.withdrawn_note = t.withdrawn_note || note;
+            record.withdrawn_account_id = t.withdrawn_account_id;
+            record.withdrawn_account_name = t.withdrawn_account_name;
+            record.withdrawn_currency = t.withdrawn_currency;
+            record.withdrawn_deduct_amount = t.withdrawn_deduct_amount;
         }
     });
     DB.set('tips_records', allTipsRecords);
@@ -962,7 +1077,7 @@ function submitTipsWithdraw(settlementId) {
         member_id: null,
         type: 'refund',
         amount: actualWithdrawn,
-        note: `小費出款 - ${settlement.table_type} - ${actualWithdrawn.toFixed(2)} 泰銖 - 共 ${updatedCount} 筆小費${note ? ' - ' + note : ''} - 操作人：${adminName}`,
+        note: `小費出款 - ${settlement.table_type} - ${actualWithdrawn.toFixed(2)} 泰銖 - 共 ${updatedCount} 筆小費 - 帳戶：${account.name} (${currency})${note ? ' - ' + note : ''} - 操作人：${adminName}`,
         admin_id: adminId,
         admin_name: adminName,
         created_at: nowTime
@@ -971,15 +1086,21 @@ function submitTipsWithdraw(settlementId) {
     
     // ★ 記錄操作日誌
     addOperationLog('每日台帳', '小費出款', settlement.table_type, 
-        `${settlement.table_type} 小費出款 ${actualWithdrawn.toFixed(2)} 泰銖 (共 ${updatedCount} 筆)${note ? ' - ' + note : ''} - 操作人：${adminName}`);
+        `${settlement.table_type} 小費出款 ${actualWithdrawn.toFixed(2)} 泰銖 (共 ${updatedCount} 筆) - 帳戶：${account.name} (${currency})${note ? ' - ' + note : ''} - 操作人：${adminName}`);
     
     // ★ 顯示結果
     const remainingUnpaid = totalPending - actualWithdrawn;
+    const newBalance = get_account_balance(accountId, currency);
     let resultMsg = `✅ 小費出款完成！\n\n`;
     resultMsg += `桌號：${settlement.table_type}\n`;
     resultMsg += `出款金額：${actualWithdrawn.toFixed(2)} 泰銖\n`;
+    resultMsg += `出款幣種：${currency}\n`;
+    resultMsg += `扣款金額：${deductAmount.toFixed(2)} ${currency}\n`;
+    resultMsg += `出款帳戶：${account.name}\n`;
+    resultMsg += `帳戶餘額：${newBalance.toFixed(2)} ${currency}\n`;
     resultMsg += `處理筆數：${updatedCount} 筆\n`;
     resultMsg += `剩餘待出款：${remainingUnpaid.toFixed(2)} 泰銖\n`;
+    resultMsg += `賣出價：${sellRate}\n`;
     resultMsg += `操作人：${adminName}\n`;
     if (note) resultMsg += `備註：${note}\n`;
     
@@ -1000,6 +1121,54 @@ function submitTipsWithdraw(settlementId) {
     }, 100);
     
     alert(resultMsg);
+}
+
+
+// ============================================================
+// 小費出款預覽更新函數
+// ============================================================
+
+function updateTipsWithdrawPreview() {
+    const overlay = document.querySelector('.modal-overlay');
+    if (!overlay) return;
+    
+    const accountSelect = overlay.querySelector('#tipsWithdrawAccount');
+    const currencySelect = overlay.querySelector('#tipsWithdrawCurrency');
+    const amountInput = overlay.querySelector('#tipsWithdrawAmount');
+    
+    const previewDiv = document.getElementById('tipsWithdrawPreview');
+    const afterBalanceSpan = document.getElementById('tipsAfterBalance');
+    const afterCurrencySpan = document.getElementById('tipsAfterCurrency');
+    const withdrawDisplaySpan = document.getElementById('tipsWithdrawDisplay');
+    const withdrawDisplayCurrencySpan = document.getElementById('tipsWithdrawDisplayCurrency');
+    
+    const selectedOption = accountSelect.options[accountSelect.selectedIndex];
+    const selectedCurrency = currencySelect.value;
+    const amount = parseFloat(amountInput.value.replace(/,/g, '')) || 0;
+    
+    if (selectedOption && selectedOption.value && amount > 0) {
+        const currentBalance = parseFloat(selectedOption.dataset.balance || 0);
+        const accountCurrency = selectedOption.dataset.currency || 'THB';
+        
+        // 計算需要扣除的金額（使用賣出價換算）
+        let deductAmount = 0;
+        if (selectedCurrency === 'THB') {
+            deductAmount = amount;
+        } else {
+            deductAmount = convertFromTHB(amount, selectedCurrency);
+        }
+        
+        const afterBalance = currentBalance - deductAmount;
+        
+        previewDiv.style.display = 'block';
+        afterBalanceSpan.textContent = afterBalance.toFixed(2);
+        afterBalanceSpan.style.color = afterBalance >= 0 ? '#2e7d32' : '#c62828';
+        afterCurrencySpan.textContent = selectedCurrency;
+        withdrawDisplaySpan.textContent = deductAmount.toFixed(2);
+        withdrawDisplayCurrencySpan.textContent = selectedCurrency;
+    } else {
+        previewDiv.style.display = 'none';
+    }
 }
 
 
