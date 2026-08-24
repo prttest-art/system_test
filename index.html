@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RPT 会员管理系统</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div id="app">
+    <!-- 顶部标题栏 -->
+    <header>
+        <div class="header-left">
+            <span class="logo">RPT</span>
+            <span class="logo-sub">会员管理系统</span>
+        </div>
+        <div class="header-right">
+            <span id="userInfo">未登录</span>
+            <button class="logout-btn" onclick="logout()">登出</button>
+        </div>
+    </header>
+    
+    <!-- 主体区域：左侧菜单 + 右侧内容 -->
+    <div class="main-container">
+        <!-- 左侧菜单 - 由 JavaScript 动态生成 -->
+        <nav class="sidebar" id="sidebar">
+            <div style="padding:20px;text-align:center;color:#999;font-size:14px;">
+                ⏳ 加载中...
+            </div>
+        </nav>
+        
+        <!-- 右侧内容区 -->
+        <main class="content" id="mainContent">
+            <!-- 页面内容将由 JavaScript 动态渲染 -->
+        </main>
+    </div>
+</div>
+
+<!-- 加载 JavaScript 模块 -->
+<script src="js/database.js"></script>
+<script src="js/utils.js"></script>
+<script src="js/modal.js"></script>
+<script src="js/pages/dashboard.js"></script>
+<script src="js/pages/members.js"></script>
+<script src="js/pages/agent_stay.js"></script>
+<script src="js/pages/transactions.js"></script>
+<script src="js/pages/flow.js"></script>
+<script src="js/pages/agents.js"></script>
+<script src="js/pages/accounts.js"></script>
+<script src="js/pages/tables.js"></script>
+<script src="js/pages/currency.js"></script>
+<script src="js/pages/exchange.js"></script>
+<script src="js/pages/employees.js"></script>
+<script src="js/pages/attendance.js"></script>
+<script src="js/pages/salary.js"></script>
+<script src="js/pages/expenses.js"></script>
+<script src="js/pages/permissions.js"></script>
+<script src="js/pages/backup.js"></script>
+<script src="js/pages/operation_log.js"></script>
+<script src="js/router.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
