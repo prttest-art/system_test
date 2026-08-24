@@ -282,15 +282,15 @@ function renderTables(el) {
             let paymentStatusClass = '';
             if (isPaid) {
                 if (totalAccountBalance > 0) {
-                    paymentStatusText = `✅ 已支付 (余额：${totalAccountBalance.toFixed(2)})`;
+                    paymentStatusText = `✅ 已结算 (余额：${totalAccountBalance.toFixed(2)})`;
                     paymentStatusClass = 'badge-success';
                 } else {
-                    paymentStatusText = '✅ 已支付 (0.00)';
+                    paymentStatusText = '✅ 已结算 (0.00)';
                     paymentStatusClass = 'badge-success';
                 }
             } else {
                 const debtAmount = Math.abs(totalAccountBalance);
-                paymentStatusText = `❌ 未支付 (尚欠：${debtAmount.toFixed(2)})`;
+                paymentStatusText = `❌ 未结算 (尚欠：${debtAmount.toFixed(2)})`;
                 paymentStatusClass = 'badge-danger';
             }
             const playerUpRecords = upRecords.filter(r => r.session_id === s.id);
@@ -433,7 +433,7 @@ function renderTables(el) {
 }
 
 // ============================================================
-// 開桌功能 - 含重置功能
+// 開桌功能 - 重置該桌所有資料，但保留歷史結算紀錄
 // ============================================================
 
 function openTable() {
@@ -455,7 +455,9 @@ function openTable() {
     }
     
     if (warningMsg) {
-        warningMsg += `\n開桌將清除該桌所有現有資料（包含玩家、上分記錄、抽水、保險、小費等），確定要繼續嗎？`;
+        warningMsg += `\n開桌將清除該桌所有現有資料（包含玩家、上分記錄、抽水、保險、小費等），`;
+        warningMsg += `\n但不會影響已保存的「每日台帳」歷史結算紀錄。`;
+        warningMsg += `\n\n確定要繼續嗎？`;
         if (!confirm(warningMsg)) {
             return;
         }
@@ -490,6 +492,7 @@ function openTable() {
         </div>
         <div style="padding:10px;background:#fff8e1;border-radius:6px;font-size:12px;text-align:center;border:1px solid #ffcc80;margin-bottom:10px;">
             <span style="color:#e65100;">📌 開桌後將清除該桌所有資料並重新開始</span>
+            <span style="color:#e65100;display:block;margin-top:4px;">📌 歷史結算紀錄不受影響，保留在「每日台帳」中</span>
         </div>
         <div class="modal-actions">
             <button class="btn" onclick="this.closest('.modal-overlay').remove()">取消</button>
@@ -554,7 +557,7 @@ function submitOpenTable() {
     }
     
     // ============================================================
-    // ★ 重置該台桌所有內容
+    // ★ 重置該台桌所有內容（但保留歷史結算紀錄）
     // ============================================================
     
     const sessions = DB.get('sessions', []);
@@ -563,35 +566,43 @@ function submitOpenTable() {
     const tipsRecords = DB.get('tips_records', []);
     const upRecords = DB.get('up_records', []);
     const downRecords = DB.get('down_records', []);
-    const rechargeRecords = DB.get('recharge_records', []);
-    const withdrawRecords = DB.get('withdraw_records', []);
     const exchangeRecords = DB.get('exchange_records', []);
     
+    // ★ 注意：不要清除 daily_settlements（歷史結算紀錄）
+    
+    // 清除該桌的玩家會話
     const remainingSessions = sessions.filter(s => s.table_type !== currentTable || s.session_type === 'table_open');
     DB.set('sessions', remainingSessions);
     
+    // 清除該桌的抽水記錄
     const remainingWater = waterRecords.filter(w => w.table_type !== currentTable);
     DB.set('water_records', remainingWater);
     
+    // 清除該桌的保險記錄
     const remainingInsurance = insuranceRecords.filter(i => i.table_type !== currentTable);
     DB.set('insurance_records', remainingInsurance);
     
+    // 清除該桌的小費記錄
     const remainingTips = tipsRecords.filter(t => t.table_type !== currentTable);
     DB.set('tips_records', remainingTips);
     
+    // 清除該桌上分記錄（透過 session_id 關聯）
     const playerSessionIds = sessions.filter(s => s.table_type === currentTable && s.session_type === 'player').map(s => s.id);
     const remainingUp = upRecords.filter(r => !playerSessionIds.includes(r.session_id));
     DB.set('up_records', remainingUp);
     
+    // 清除該桌下分記錄
     const remainingDown = downRecords.filter(r => !playerSessionIds.includes(r.session_id));
     DB.set('down_records', remainingDown);
     
+    // 清除該桌兌匯記錄（透過 table_type 關聯）
     const remainingExchange = exchangeRecords.filter(e => e.table_type !== currentTable);
     DB.set('exchange_records', remainingExchange);
     
-    const tableOpenSessions = remainingSessions.filter(s => s.table_type === currentTable && s.session_type === 'table_open');
+    // 清除該桌的開桌記錄（刪除舊的，建立新的）
     const newRemainingSessions = remainingSessions.filter(s => !(s.table_type === currentTable && s.session_type === 'table_open'));
     
+    // 建立新的開桌記錄
     const newSession = {
         id: DB.getNextId('sessions'),
         table_type: currentTable,
@@ -607,21 +618,19 @@ function submitOpenTable() {
     newRemainingSessions.push(newSession);
     DB.set('sessions', newRemainingSessions);
     
-    const todayStr = new Date().toISOString().split('T')[0];
-    const settlements = DB.get('daily_settlements', []);
-    const remainingSettlements = settlements.filter(s => 
-        !(s.table_type === currentTable && s.settle_time && s.settle_time.startsWith(todayStr))
-    );
-    DB.set('daily_settlements', remainingSettlements);
-    
+    // 重置保險收益比例為預設值
     insuranceRate = 5;
     
+    // ★ 獲取該桌的歷史結算次數
+    const settlements = DB.get('daily_settlements', []);
+    const historyCount = settlements.filter(s => s.table_type === currentTable).length;
+    
     addOperationLog('台桌看板', '开桌', currentTable, 
-        `${currentTable} 已開桌 (${formatDate(startTime)}) - 已重置該桌所有資料`);
+        `${currentTable} 已開桌 (${formatDate(startTime)}) - 已重置該桌所有資料，歷史結算紀錄 ${historyCount} 筆保留在每日台帳`);
     
     overlay.remove();
     renderTables(document.getElementById('mainContent'));
-    alert(`✅「${currentTable}」已開桌並重置完成！\n開桌時間：${formatDate(startTime)}\n\n已清除該桌所有玩家、上分記錄、抽水、保險、小費等資料。`);
+    alert(`✅「${currentTable}」已開桌並重置完成！\n開桌時間：${formatDate(startTime)}\n\n已清除該桌所有玩家、上分記錄、抽水、保險、小費等資料。\n📌 歷史結算紀錄 ${historyCount} 筆保留在「每日台帳」中，不受影響。`);
 }
 
 // ============================================================
@@ -2994,7 +3003,7 @@ function showSessionDetail(sessionId) {
 }
 
 // ============================================================
-// 整桌結算 - 修正：完整保存保險記錄
+// 整桌結算 - 完整版（每次結算新增一筆獨立紀錄）
 // ============================================================
 
 function settleTable() {
@@ -3164,7 +3173,6 @@ function settleTable() {
     // 步驟4：計算各項數據
     // ============================================================
     
-    // 計算總時長
     let totalHours = 0;
     playerSessions.forEach(s => {
         totalHours += calculatePlayerDuration(s.id);
@@ -3174,22 +3182,18 @@ function settleTable() {
     const totalDown = playerSessions.reduce((sum, s) => sum + (s.down_amount || 0), 0);
     const totalProfit = totalDown - totalUp;
     
-    // ★ 獲取該桌的抽水記錄
     const tableWaterRecords = waterRecords.filter(w => w.table_type === currentTable);
     const totalWater = tableWaterRecords.reduce((sum, w) => sum + w.amount, 0);
     const waterCount = tableWaterRecords.length;
     
-    // ★ 獲取該桌的保險記錄（結算前先保存完整數據）
     const tableInsuranceRecords = insuranceRecords.filter(i => i.table_type === currentTable);
     const totalInsurance = tableInsuranceRecords.reduce((sum, i) => sum + i.amount, 0);
     const insuranceCount = tableInsuranceRecords.length;
     
-    // ★ 獲取該桌的小費記錄
     const tableTipsRecords = tipsRecords.filter(t => t.table_type === currentTable);
     const totalTips = tableTipsRecords.reduce((sum, t) => sum + t.amount, 0);
     const tipsCount = tableTipsRecords.length;
     
-    // 計算退水（四捨五入到百位）
     const playerRebateResults = [];
     let totalRebateAmount = 0;
     
@@ -3230,13 +3234,11 @@ function settleTable() {
     }
     
     const waterFee = totalWater - totalRebateAmount;
-    
-    // 保險收益
     const insuranceEarnings = totalInsurance > 0 ? totalInsurance * (insuranceRate / 100) : 0;
     const insuranceFee = totalInsurance - insuranceEarnings;
     
     // ============================================================
-    // ★★★ 步驟5：驗證總盈餘 + 總抽水 + 總保險 + 總小費 = 0 ★★★
+    // 步驟5：驗證總盈餘 + 總抽水 + 總保險 + 總小費 = 0
     // ============================================================
     
     const checkSum = totalProfit + totalWater + totalInsurance + totalTips;
@@ -3324,13 +3326,14 @@ function settleTable() {
     confirmMsg += `\n📌 結算後將清除該桌所有資料（玩家、上分、抽水、保險、小費等）`;
     confirmMsg += `\n📌 結算後可前往「每日台帳」查看完整紀錄（含抽水、保險、小費明細）`;
     confirmMsg += `\n📌 歷史紀錄中也可查詢該筆結算`;
+    confirmMsg += `\n📌 每次結算都會在每日台帳新增一筆獨立紀錄，即使時段重複也會記錄`;
     
     if (!confirm(confirmMsg)) {
         return;
     }
     
     // ============================================================
-    // 步驟7：執行結算 - ★ 完整保存所有數據
+    // 步驟7：執行結算 - 每次新增一筆獨立紀錄
     // ============================================================
     
     const adminName = getCurrentAdminName();
@@ -3339,7 +3342,6 @@ function settleTable() {
     
     const settlements = DB.get('daily_settlements', []);
     
-    // 建立玩家詳情
     const playerDetails = playerSessions.map(s => {
         const member = members.find(m => m.id === s.member_id);
         const agent = agents.find(a => a.id === s.agent_id);
@@ -3360,8 +3362,6 @@ function settleTable() {
     
     const negativePlayerNames = negativePlayers.map(p => p.memberName).join('、');
     
-    // ★★★ 關鍵修正：保存保險記錄的完整數據（不僅僅是 ID） ★★★
-    // 將保險記錄轉換為可序列化的格式，包含所有欄位
     const insuranceData = tableInsuranceRecords.map(i => ({
         id: i.id,
         table_type: i.table_type,
@@ -3371,7 +3371,6 @@ function settleTable() {
         created_at: i.created_at
     }));
     
-    // ★★★ 保存抽水記錄的完整數據 ★★★
     const waterData = tableWaterRecords.map(w => ({
         id: w.id,
         table_type: w.table_type,
@@ -3382,7 +3381,6 @@ function settleTable() {
         created_at: w.created_at
     }));
     
-    // ★★★ 保存小費記錄的完整數據 ★★★
     const tipsData = tableTipsRecords.map(t => ({
         id: t.id,
         table_type: t.table_type,
@@ -3399,13 +3397,13 @@ function settleTable() {
         withdrawn_admin_name: t.withdrawn_admin_name || null
     }));
     
-    // 保存保險記錄ID列表（用於快速查詢）
     const insuranceIds = tableInsuranceRecords.map(i => i.id);
     const tipsIds = tableTipsRecords.map(t => t.id);
     
-    // ★ 創建完整的結算記錄
+    const nextId = DB.getNextId('daily_settlements');
+    
     const newSettlement = {
-        id: DB.getNextId('daily_settlements'),
+        id: nextId,
         table_type: currentTable,
         open_time: tableOpen.start_time,
         settle_time: nowTime,
@@ -3425,10 +3423,9 @@ function settleTable() {
         insurance_fee: insuranceFee,
         total_tips: totalTips,
         tips_count: tipsCount,
-        // ★★★ 保存完整數據 ★★★
         tips_details: JSON.stringify(tipsData),
         water_details: JSON.stringify(waterData),
-        insurance_details: JSON.stringify(insuranceData),  // ★ 新增：完整保險記錄
+        insurance_details: JSON.stringify(insuranceData),
         negative_players: negativePlayerNames || '無',
         negative_count: negativePlayers.length,
         insurance_ids: insuranceIds,
@@ -3448,6 +3445,7 @@ function settleTable() {
         created_at: nowTime
     };
     
+    // ★ 新增結算記錄（push 新增，不覆蓋）
     settlements.push(newSettlement);
     DB.set('daily_settlements', settlements);
     
@@ -3455,36 +3453,28 @@ function settleTable() {
     // 步驟8：清除該桌所有資料
     // ============================================================
     
-    // 清除玩家會話
     const remainingSessions = sessions.filter(s => !(s.table_type === currentTable && s.session_type === 'player'));
     DB.set('sessions', remainingSessions);
     
-    // 清除開桌記錄
     const finalSessions = remainingSessions.filter(s => !(s.table_type === currentTable && s.session_type === 'table_open'));
     DB.set('sessions', finalSessions);
     
-    // 清除抽水記錄
     const remainingWater = waterRecords.filter(w => w.table_type !== currentTable);
     DB.set('water_records', remainingWater);
     
-    // 清除保險記錄
     const remainingInsurance = insuranceRecords.filter(i => i.table_type !== currentTable);
     DB.set('insurance_records', remainingInsurance);
     
-    // 清除小費記錄
     const remainingTips = tipsRecords.filter(t => t.table_type !== currentTable);
     DB.set('tips_records', remainingTips);
     
-    // 清除上分記錄
     const playerSessionIds = playerSessions.map(s => s.id);
     const remainingUp = upRecords.filter(r => !playerSessionIds.includes(r.session_id));
     DB.set('up_records', remainingUp);
     
-    // 清除下分記錄
     const remainingDown = downRecords.filter(r => !playerSessionIds.includes(r.session_id));
     DB.set('down_records', remainingDown);
     
-    // 清除兌匯記錄
     const exchangeRecords = DB.get('exchange_records', []);
     const remainingExchange = exchangeRecords.filter(e => e.table_type !== currentTable);
     DB.set('exchange_records', remainingExchange);
@@ -3493,8 +3483,11 @@ function settleTable() {
     // 步驟9：記錄操作日誌
     // ============================================================
     
+    const tableSettlements = settlements.filter(s => s.table_type === currentTable);
+    const settlementCount = tableSettlements.length;
+    
     addOperationLog('台桌看板', '结算', currentTable, 
-        `${currentTable} 結算完成 - 玩家 ${playerSessions.length} 人，總盈餘 ${totalProfit.toFixed(2)}，總抽水 ${totalWater.toFixed(2)}，總保險 ${totalInsurance.toFixed(2)}，總小費 ${totalTips.toFixed(2)}，驗證 ${verificationPassed ? '通過' : '不通過 (' + checkSumDisplay + ')'}`);
+        `${currentTable} 結算完成 - 玩家 ${playerSessions.length} 人，總盈餘 ${totalProfit.toFixed(2)}，總抽水 ${totalWater.toFixed(2)}，總保險 ${totalInsurance.toFixed(2)}，總小費 ${totalTips.toFixed(2)}，驗證 ${verificationPassed ? '通過' : '不通過 (' + checkSumDisplay + ')'} | 結算記錄 ID: ${nextId} | 累計 ${settlementCount} 次`);
     
     // ============================================================
     // 步驟10：顯示結算結果
@@ -3526,9 +3519,11 @@ function settleTable() {
         resultMsg += `\n`;
     }
     
-    resultMsg += `📌 該桌所有資料已清除\n`;
-    resultMsg += `📌 可前往「每日台帳」查看完整結算紀錄（含抽水、保險、小費明細）`;
+    resultMsg += `📌 該桌所有資料已清除，可重新開桌\n`;
+    resultMsg += `📌 結算記錄已保存到每日台帳（ID: ${nextId}）`;
+    resultMsg += `\n📌 可前往「每日台帳」查看完整結算紀錄（含抽水、保險、小費明細）`;
     resultMsg += `\n📌 歷史紀錄中也可查詢該筆結算`;
+    resultMsg += `\n📌「${currentTable}」已累計結算 ${settlementCount} 次（每次結算獨立紀錄）`;
     
     renderTables(document.getElementById('mainContent'));
     alert(resultMsg);
